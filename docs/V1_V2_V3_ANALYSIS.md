@@ -101,6 +101,7 @@ v4: "설계 먼저. 6 Phase. 끝." → 5,764 LOC에 334 tests 0 failures
   - v4는 #2 Tagged Union 사용 중
   - v5 성능 최적화 시 #4 Flat AST 또는 #5 Arena AST 검토
 - **Observability Daemon**: https://gogs.dclub.kr/kim/Observability-Daemon.git
-  - 2D 구조: X축(코드 작성) + Y축(백그라운드 분석)
-  - 실시간 메모리 추적, 성능 분석, 추론 엔진
-  - v5 런타임 프로파일링/디버거 구현 시 참고
+  - 코드 분석 어시스턴트 (에디터 연동 CLI)
+  - 실시간 위험도 분석 (메모리, 성능, 에러 핸들링)
+  - Vim/Emacs/Sublime/VSCode 통합, CI/CD 파이프라인 지원
+  - v5 FreeLang 코드 분석 도구(linter/advisor) 구현 시 참고
