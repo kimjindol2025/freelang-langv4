@@ -1,0 +1,36 @@
+// 🚀 FreeLang v4 커스텀 프로그램
+
+// 1. 간단한 출력
+println("=== FreeLang v4 커스텀 프로그램 ===")
+
+// 2. 변수 선언 및 계산
+var x = 10
+var y = 20
+var sum = x + y
+println("x + y = " + str(sum))
+
+// 3. 반복문
+println("=== 1부터 5까지 ===" )
+for i in range(1, 6) {
+  println(str(i))
+}
+
+// 4. 조건문
+println("=== 짝수/홀수 판정 ===")
+for i in range(1, 11) {
+  if (i % 2) == 0 {
+    println(str(i) + " : 짝수")
+  } else {
+    println(str(i) + " : 홀수")
+  }
+}
+
+// 5. 수학 함수들
+fn square(n: i32): i32 {
+  return n * n
+}
+
+println("=== 제곱수 ===" )
+for i in range(1, 6) {
+  println(str(i) + "² = " + str(square(i)))
+}

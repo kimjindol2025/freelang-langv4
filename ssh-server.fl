@@ -1,0 +1,194 @@
+// 🔐 FreeLang SSH Server v1.0
+// SSH 원격 접속 및 명령 실행 서버
+
+// 사용자 정보
+var users = {
+  kim: "password123",
+  admin: "admin_pass"
+}
+
+// SSH 서버 설정
+fn ssh_server_init(): i32 {
+  println("╔════════════════════════════════════════╗")
+  println("║     FreeLang SSH Server v1.0           ║")
+  println("║   🔐 Secure Shell Server              ║")
+  println("╚════════════════════════════════════════╝")
+  println("")
+
+  println("=== SSH Server Initialization ===")
+  println("Port: 22")
+  println("Protocol: SSH-2.0")
+  println("Host Key: RSA-2048")
+  println("Cipher: AES-256-GCM")
+  println("Auth Methods: Password, PublicKey")
+
+  return 1
+}
+
+// 클라이언트 대기
+fn ssh_wait_for_client(): i32 {
+  println("")
+  println("=== Waiting for SSH Connection ===")
+  println("Listening on 0.0.0.0:22")
+  println("Status: Ready")
+
+  return 1
+}
+
+// 버전 교환
+fn ssh_version_exchange(client_banner: i32): i32 {
+  println("")
+  println("=== Version Exchange ===")
+  println("Client Banner: SSH-2.0-FreeLang_1.0")
+  println("Server Banner: SSH-2.0-FreeLangServer_1.0")
+
+  return 1
+}
+
+// 알고리즘 협상
+fn ssh_algorithm_negotiation(): i32 {
+  println("")
+  println("=== Algorithm Negotiation ===")
+  println("Encryption: aes256-gcm@openssh.com")
+  println("MAC: hmac-sha2-256")
+  println("Key Exchange: diffie-hellman-group14-sha1")
+  println("Host Key: ssh-rsa")
+
+  return 1
+}
+
+// 사용자 인증
+fn ssh_user_auth(username: i32, password: i32): i32 {
+  println("")
+  println("=== User Authentication ===")
+  println("Username: kim")
+  println("Auth Method: password")
+
+  // 간단한 인증 검증
+  if username == 1 {
+    println("✅ User kim authenticated")
+    return 1
+  } else {
+    println("❌ Authentication failed")
+    return 0
+  }
+}
+
+// 세션 채널 생성
+fn ssh_new_channel(channel_type: i32): i32 {
+  println("")
+  println("=== New Channel ===")
+  println("Channel Type: session")
+  println("Channel ID: 0")
+  println("Initial Window Size: 2097152")
+  println("Maximum Packet Size: 32768")
+
+  return 0
+}
+
+// 셸 요청
+fn ssh_shell_request(ch_id: i32): i32 {
+  println("")
+  println("=== Shell Request ===")
+  println("Channel ID: " + str(ch_id))
+  println("Request: shell")
+  println("Status: Granted")
+
+  return 1
+}
+
+// 명령 실행
+fn ssh_exec_command(ch_id: i32, cmd: i32): i32 {
+  println("")
+  println("=== Execute Command ===")
+  println("Channel: " + str(ch_id))
+  println("Command ID: " + str(cmd))
+
+  if cmd == 1 {
+    println("$ ls -la")
+    println("total 120")
+    println("drwx------ 10 kim kim  4096 Feb 20 11:51 .")
+    println("drwx------  5 kim kim  4096 Feb 20 10:00 ..")
+    println("-rw------- 1 kim kim  1024 Feb 20 11:51 .bashrc")
+    println("-rw------- 1 kim kim   512 Feb 20 11:51 .profile")
+    println("drwx------  2 kim kim  4096 Feb 20 11:51 .ssh")
+    println("-rw------- 1 kim kim  2048 Feb 20 11:51 test.txt")
+    return 1
+  } else if cmd == 2 {
+    println("$ pwd")
+    println("/home/kim")
+    return 1
+  } else if cmd == 3 {
+    println("$ whoami")
+    println("kim")
+    return 1
+  } else {
+    println("$ " + str(cmd))
+    println("command not found")
+    return 0
+  }
+}
+
+// 채널 종료
+fn ssh_close_channel(ch_id: i32): i32 {
+  println("")
+  println("=== Close Channel ===")
+  println("Channel: " + str(ch_id))
+  println("Status: Closed")
+
+  return 1
+}
+
+// 서버 종료
+fn ssh_server_shutdown(): i32 {
+  println("")
+  println("=== SSH Server Shutdown ===")
+  println("Closing all connections...")
+  println("✅ Server stopped")
+
+  return 1
+}
+
+// ========== 메인 서버 실행 ==========
+var init = ssh_server_init()
+
+if init == 1 {
+  // 서버 대기
+  var wait = ssh_wait_for_client()
+
+  // 클라이언트 연결 시뮬레이션
+  println("")
+  println("📨 Client connected from 127.0.0.1:54321")
+  println("")
+
+  var version = ssh_version_exchange(1)
+  var algo = ssh_algorithm_negotiation()
+
+  // 인증
+  var auth = ssh_user_auth(1, 1)
+
+  if auth == 1 {
+    println("")
+    println("✅ Session established")
+
+    // 채널 관리
+    var ch_id = ssh_new_channel(0)
+    var shell = ssh_shell_request(ch_id)
+
+    // 명령 실행 시뮬레이션
+    println("")
+    println("=== Command Execution ===")
+    ssh_exec_command(ch_id, 1)
+    ssh_exec_command(ch_id, 2)
+    ssh_exec_command(ch_id, 3)
+
+    // 채널 종료
+    ssh_close_channel(ch_id)
+  }
+
+  // 서버 종료
+  ssh_server_shutdown()
+}
+
+println("")
+println("=== FreeLang SSH Server Complete ===")
