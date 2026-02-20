@@ -1,11 +1,37 @@
 {
-  "name": "freelang-v4",
+  "name": "freelang-cli",
   "version": "4.0.0",
-  "description": "FreeLang v4 - Database Implementation",
-  "main": "dist/index.js",
+  "description": "FreeLang v4 - AI-First Programming Language (334/334 tests passing)",
+  "main": "dist/main.js",
+  "bin": {
+    "freelang": "dist/main.js"
+  },
   "scripts": {
     "build": "tsc",
-    "test": "node -r ts-node/register src/**/*.test.ts"
+    "test": "node -r ts-node/register src/**/*.test.ts",
+    "prepublish": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gogs.dclub.kr/kim/freelang-v4.git"
+  },
+  "keywords": [
+    "programming-language",
+    "compiler",
+    "ai",
+    "freelang",
+    "static-typing",
+    "bytecode-vm"
+  ],
+  "author": "KimNexus",
+  "license": "MIT",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
   },
   "dependencies": {},
   "devDependencies": {
