@@ -6,11 +6,12 @@
 // ============================================================
 
 export enum TokenType {
-  // 키워드 (13)
+  // 키워드 (14)
   VAR = "VAR",
   LET = "LET",
   CONST = "CONST",
   FN = "FN",
+  STRUCT = "STRUCT",
   IF = "IF",
   ELSE = "ELSE",
   MATCH = "MATCH",
@@ -95,11 +96,12 @@ export type LexError = {
 // ============================================================
 
 const KEYWORDS: Map<string, TokenType> = new Map([
-  // 키워드 (13)
+  // 키워드 (14)
   ["var", TokenType.VAR],
   ["let", TokenType.LET],
   ["const", TokenType.CONST],
   ["fn", TokenType.FN],
+  ["struct", TokenType.STRUCT],
   ["if", TokenType.IF],
   ["else", TokenType.ELSE],
   ["match", TokenType.MATCH],

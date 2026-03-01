@@ -149,7 +149,7 @@ function typeToString(t: Type): string {
   }
 }
 
-function annotationToType(a: TypeAnnotation): Type {
+function annotationToType(a: TypeAnnotation, structDefs: Map<string, Type> = new Map()): Type {
   switch (a.kind) {
     case "i32": return { kind: "i32" };
     case "i64": return { kind: "i64" };
@@ -157,10 +157,14 @@ function annotationToType(a: TypeAnnotation): Type {
     case "bool": return { kind: "bool" };
     case "string": return { kind: "string" };
     case "void": return { kind: "void" };
-    case "array": return { kind: "array", element: annotationToType(a.element) };
-    case "channel": return { kind: "channel", element: annotationToType(a.element) };
-    case "option": return { kind: "option", element: annotationToType(a.element) };
-    case "result": return { kind: "result", ok: annotationToType(a.ok), err: annotationToType(a.err) };
+    case "array": return { kind: "array", element: annotationToType(a.element, structDefs) };
+    case "channel": return { kind: "channel", element: annotationToType(a.element, structDefs) };
+    case "option": return { kind: "option", element: annotationToType(a.element, structDefs) };
+    case "result": return { kind: "result", ok: annotationToType(a.ok, structDefs), err: annotationToType(a.err, structDefs) };
+    case "struct_ref": {
+      const structType = structDefs.get(a.name);
+      return structType || { kind: "unknown" };
+    }
   }
 }
 
@@ -171,6 +175,7 @@ function annotationToType(a: TypeAnnotation): Type {
 export class TypeChecker {
   private errors: CheckError[] = [];
   private functions: Map<string, FnInfo> = new Map();
+  private structs: Map<string, Type> = new Map(); // struct 정의 저장소
   private scope: Scope;
   private currentReturnType: Type | null = null;
 
@@ -179,14 +184,21 @@ export class TypeChecker {
   }
 
   check(program: Program): CheckError[] {
-    // Pass 1: 함수 전방참조 등록 (SPEC_08 Q5)
+    // Pass 1: struct 정의 등록
+    for (const stmt of program.stmts) {
+      if (stmt.kind === "struct_decl") {
+        this.registerStruct(stmt);
+      }
+    }
+
+    // Pass 2: 함수 전방참조 등록 (SPEC_08 Q5)
     for (const stmt of program.stmts) {
       if (stmt.kind === "fn_decl") {
         this.registerFunction(stmt);
       }
     }
 
-    // Pass 2: 본문 검사
+    // Pass 3: 본문 검사
     for (const stmt of program.stmts) {
       this.checkStmt(stmt);
     }
@@ -197,9 +209,9 @@ export class TypeChecker {
   private registerFunction(stmt: Stmt & { kind: "fn_decl" }): void {
     const params = stmt.params.map((p) => ({
       name: p.name,
-      type: annotationToType(p.type),
+      type: annotationToType(p.type, this.structs),
     }));
-    const returnType = annotationToType(stmt.returnType);
+    const returnType = annotationToType(stmt.returnType, this.structs);
 
     if (this.functions.has(stmt.name)) {
       this.error(`function '${stmt.name}' already declared`, stmt.line, stmt.col);
@@ -207,6 +219,21 @@ export class TypeChecker {
     }
 
     this.functions.set(stmt.name, { params, returnType });
+  }
+
+  private registerStruct(stmt: Stmt & { kind: "struct_decl" }): void {
+    const fields = new Map<string, Type>();
+    for (const field of stmt.fields) {
+      const fieldType = annotationToType(field.type, this.structs);
+      fields.set(field.name, fieldType);
+    }
+
+    if (this.structs.has(stmt.name)) {
+      this.error(`struct '${stmt.name}' already declared`, stmt.line, stmt.col);
+      return;
+    }
+
+    this.structs.set(stmt.name, { kind: "struct", fields });
   }
 
   // ============================================================
@@ -219,6 +246,8 @@ export class TypeChecker {
         return this.checkVarDecl(stmt);
       case "fn_decl":
         return this.checkFnDecl(stmt);
+      case "struct_decl":
+        return; // struct는 Pass 1에서 이미 등록됨
       case "if_stmt":
         return this.checkIfStmt(stmt);
       case "match_stmt":

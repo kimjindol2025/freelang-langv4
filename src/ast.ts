@@ -14,7 +14,8 @@ export type TypeAnnotation =
   | { kind: "array"; element: TypeAnnotation }
   | { kind: "channel"; element: TypeAnnotation }
   | { kind: "option"; element: TypeAnnotation }
-  | { kind: "result"; ok: TypeAnnotation; err: TypeAnnotation };
+  | { kind: "result"; ok: TypeAnnotation; err: TypeAnnotation }
+  | { kind: "struct_ref"; name: string };
 
 // ============================================================
 // 패턴 (Match Patterns) — SPEC_05 Q8: 7종
@@ -66,9 +67,15 @@ export type Param = {
   type: TypeAnnotation;
 };
 
+export type StructField = {
+  name: string;
+  type: TypeAnnotation;
+};
+
 export type Stmt =
   | { kind: "var_decl"; name: string; mutable: boolean; type: TypeAnnotation | null; init: Expr; line: number; col: number }
   | { kind: "fn_decl"; name: string; params: Param[]; returnType: TypeAnnotation; body: Stmt[]; line: number; col: number }
+  | { kind: "struct_decl"; name: string; fields: StructField[]; line: number; col: number }
   | { kind: "if_stmt"; condition: Expr; then: Stmt[]; else_: Stmt[] | null; line: number; col: number }
   | { kind: "match_stmt"; subject: Expr; arms: MatchArm[]; line: number; col: number }
   | { kind: "for_stmt"; variable: string; iterable: Expr; body: Stmt[]; line: number; col: number }

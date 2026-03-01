@@ -3,7 +3,7 @@
 
 import { Token, TokenType } from "./lexer";
 import {
-  Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param,
+  Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param, StructField,
 } from "./ast";
 
 // ============================================================
@@ -94,6 +94,8 @@ export class Parser {
         return this.parseVarDecl();
       case TokenType.FN:
         return this.parseFnDecl();
+      case TokenType.STRUCT:
+        return this.parseStructDecl();
       case TokenType.IF:
         return this.parseIfStmt();
       case TokenType.MATCH:
@@ -153,6 +155,27 @@ export class Parser {
     const body = this.parseBlock();
 
     return { kind: "fn_decl", name, params, returnType, body, line: kw.line, col: kw.col };
+  }
+
+  // struct 선언
+  private parseStructDecl(): Stmt {
+    const kw = this.advance(); // struct
+    const name = this.expectIdent("struct name");
+    this.expect(TokenType.LBRACE, "expected '{' after struct name");
+
+    const fields: StructField[] = [];
+    if (!this.check(TokenType.RBRACE)) {
+      do {
+        const fieldName = this.expectIdent("field name");
+        this.expect(TokenType.COLON, "expected ':' after field name");
+        const fieldType = this.parseType();
+        fields.push({ name: fieldName, type: fieldType });
+      } while (this.match(TokenType.COMMA));
+    }
+
+    this.expect(TokenType.RBRACE, "expected '}' to close struct");
+
+    return { kind: "struct_decl", name, fields, line: kw.line, col: kw.col };
   }
 
   // if 문 (문 위치)
@@ -623,6 +646,13 @@ export class Parser {
       const err = this.parseType();
       this.expect(TokenType.GT, "expected '>' for Result type");
       return { kind: "result", ok, err };
+    }
+
+    // Struct type reference (custom type name)
+    if (tok.type === TokenType.IDENT) {
+      const name = tok.lexeme;
+      this.advance();
+      return { kind: "struct_ref", name };
     }
 
     this.error(`expected type, got ${tok.lexeme}`, tok);
