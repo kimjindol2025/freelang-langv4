@@ -62,6 +62,7 @@ export enum TokenType {
   RBRACKET = "RBRACKET",   // ]
   LBRACE = "LBRACE",       // {
   RBRACE = "RBRACE",       // }
+  SEMICOLON = "SEMICOLON", // ;
 
   // 특수 (2) — NEWLINE 토큰 없음 (SPEC_04 Q7)
   IDENT = "IDENT",
@@ -250,6 +251,7 @@ export class Lexer {
       ":": TokenType.COLON,
       ",": TokenType.COMMA,
       ".": TokenType.DOT,
+      ";": TokenType.SEMICOLON,
       "(": TokenType.LPAREN,
       ")": TokenType.RPAREN,
       "[": TokenType.LBRACKET,

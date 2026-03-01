@@ -123,6 +123,7 @@ export class Parser {
 
     this.expect(TokenType.EQ, "expected '=' in variable declaration");
     const init = this.parseExpr(0);
+    this.match(TokenType.SEMICOLON); // optional semicolon
 
     return { kind: "var_decl", name, mutable, type, init, line: kw.line, col: kw.col };
   }
@@ -216,6 +217,7 @@ export class Parser {
     if (!this.check(TokenType.RBRACE) && !this.isAtEnd() && !this.isStmtStart()) {
       value = this.parseExpr(0);
     }
+    this.match(TokenType.SEMICOLON); // optional semicolon
 
     return { kind: "return_stmt", value, line: kw.line, col: kw.col };
   }
@@ -229,6 +231,7 @@ export class Parser {
     if (this.check(TokenType.EQ)) {
       const eq = this.advance();
       const value = this.parseExpr(0);
+      this.match(TokenType.SEMICOLON); // optional semicolon
       return {
         kind: "expr_stmt",
         expr: { kind: "assign", target: expr, value, line: eq.line, col: eq.col },
@@ -237,6 +240,7 @@ export class Parser {
       };
     }
 
+    this.match(TokenType.SEMICOLON); // optional semicolon
     return { kind: "expr_stmt", expr, line: tok.line, col: tok.col };
   }
 
