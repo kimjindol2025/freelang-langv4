@@ -19,6 +19,7 @@ export type Type =
   | { kind: "option"; element: Type }
   | { kind: "result"; ok: Type; err: Type }
   | { kind: "struct"; fields: Map<string, Type> }
+  | { kind: "fn"; params: Type[]; returnType: Type }
   | { kind: "unknown" };
 
 // ============================================================
@@ -95,7 +96,8 @@ function isCopyType(t: Type): boolean {
     case "array":
     case "channel":
     case "struct":
-      return false; // Move 타입
+    case "fn":
+      return false; // Move 타입 (함수도 Move 타입)
     default:
       return true;
   }
@@ -128,6 +130,14 @@ function typesEqual(a: Type, b: Type): boolean {
       }
       return true;
     }
+    case "fn": {
+      const bFn = b as { kind: "fn"; params: Type[]; returnType: Type };
+      if (a.params.length !== bFn.params.length) return false;
+      for (let i = 0; i < a.params.length; i++) {
+        if (!typesEqual(a.params[i], bFn.params[i])) return false;
+      }
+      return typesEqual(a.returnType, bFn.returnType);
+    }
     default:
       return false;
   }
@@ -144,6 +154,10 @@ function typeToString(t: Type): string {
     case "struct": {
       const fields = [...t.fields.entries()].map(([k, v]) => `${k}: ${typeToString(v)}`).join(", ");
       return `{ ${fields} }`;
+    }
+    case "fn": {
+      const paramStr = t.params.map(typeToString).join(", ");
+      return `fn(${paramStr}) -> ${typeToString(t.returnType)}`;
     }
     case "unknown": return "unknown";
   }
@@ -164,6 +178,11 @@ function annotationToType(a: TypeAnnotation, structDefs: Map<string, Type> = new
     case "struct_ref": {
       const structType = structDefs.get(a.name);
       return structType || { kind: "unknown" };
+    }
+    case "fn": {
+      const params = a.params.map(p => annotationToType(p, structDefs));
+      const returnType = annotationToType(a.returnType, structDefs);
+      return { kind: "fn", params, returnType };
     }
   }
 }
@@ -532,6 +551,9 @@ export class TypeChecker {
       case "struct_lit":
         return this.checkStructLit(expr);
 
+      case "fn_lit":
+        return this.checkFnLit(expr);
+
       case "block_expr":
         return this.checkBlockExpr(expr);
 
@@ -674,9 +696,41 @@ export class TypeChecker {
       }
     }
 
+    // 함수 타입 변수 호출 (fn 타입 값)
+    const calleeType = this.checkExpr(expr.callee);
+    if (calleeType.kind === "fn") {
+      // 함수 타입 인자 개수 검사
+      if (expr.args.length !== calleeType.params.length) {
+        this.error(
+          `function expects ${calleeType.params.length} arguments, got ${expr.args.length}`,
+          expr.line, expr.col,
+        );
+      }
+
+      // 각 인자의 타입 검사
+      for (let i = 0; i < expr.args.length; i++) {
+        const argType = this.checkExpr(expr.args[i]);
+        if (i < calleeType.params.length) {
+          if (!typesEqual(argType, calleeType.params[i]) && argType.kind !== "unknown") {
+            this.error(
+              `argument ${i + 1} type mismatch: expected ${typeToString(calleeType.params[i])}, got ${typeToString(argType)}`,
+              expr.line, expr.col,
+            );
+          }
+
+          // Move semantics for function arguments
+          if (!isCopyType(argType) && expr.args[i].kind === "ident") {
+            const varInfo = this.scope.lookup((expr.args[i] as any).name);
+            if (varInfo) varInfo.moved = true;
+          }
+        }
+      }
+
+      return calleeType.returnType;
+    }
+
     // 메서드 호출 (field_access + call)
     if (expr.callee.kind === "field_access") {
-      this.checkExpr(expr.callee);
       for (const arg of expr.args) this.checkExpr(arg);
       return { kind: "unknown" }; // 메서드 반환 타입은 정적으로 모름
     }
@@ -841,6 +895,63 @@ export class TypeChecker {
       fields.set(f.name, fType);
     }
     return { kind: "struct", fields };
+  }
+
+  private checkFnLit(expr: Expr & { kind: "fn_lit" }): Type {
+    // 함수 리터럴의 매개변수 타입 확인
+    const paramTypes: Type[] = [];
+    for (const param of expr.params) {
+      if (param.type) {
+        const paramType = annotationToType(param.type, this.structs);
+        paramTypes.push(paramType);
+      } else {
+        // 타입 어노테이션 없으면 unknown (타입 추론 미지원)
+        paramTypes.push({ kind: "unknown" });
+      }
+    }
+
+    // 반환 타입 확인
+    let returnType: Type;
+    if (expr.returnType) {
+      returnType = annotationToType(expr.returnType, this.structs);
+    } else {
+      // 함수 본체에서 반환 타입 추론
+      const bodyType = this.checkExpr(expr.body);
+      returnType = bodyType;
+    }
+
+    // 함수 본체 타입 검사 (새로운 스코프에서)
+    const prevScope = this.scope;
+    this.scope = new Scope(prevScope);
+
+    // 매개변수를 스코프에 등록
+    for (let i = 0; i < expr.params.length; i++) {
+      const param = expr.params[i];
+      const paramType = paramTypes[i];
+      this.scope.define(param.name, {
+        type: paramType,
+        mutable: false,
+        moved: false,
+        line: expr.line,
+        col: expr.col,
+      });
+    }
+
+    // 함수 본체 타입 검사
+    const actualBodyType = this.checkExpr(expr.body);
+
+    // 반환 타입과 일치 검사
+    if (expr.returnType && !typesEqual(actualBodyType, returnType) && actualBodyType.kind !== "unknown") {
+      this.error(
+        `function body type mismatch: expected ${typeToString(returnType)}, got ${typeToString(actualBodyType)}`,
+        expr.line, expr.col,
+      );
+    }
+
+    this.scope = prevScope;
+
+    // 함수 타입 반환
+    return { kind: "fn", params: paramTypes, returnType };
   }
 
   private checkBlockExpr(expr: Expr & { kind: "block_expr" }): Type {

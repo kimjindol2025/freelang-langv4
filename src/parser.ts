@@ -3,7 +3,7 @@
 
 import { Token, TokenType } from "./lexer";
 import {
-  Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param, StructField,
+  Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param, StructField, FnParam,
 } from "./ast";
 
 // ============================================================
@@ -377,6 +377,11 @@ export class Parser {
       return this.parseMatchExpr();
     }
 
+    // 함수 리터럴 (람다): fn(x: i32) -> i32 { x + 1 }
+    if (tok.type === TokenType.FN) {
+      return this.parseFnLit();
+    }
+
     this.error(`unexpected token: ${tok.lexeme}`, tok);
     this.advance();
     return { kind: "ident", name: "__error__", line: tok.line, col: tok.col };
@@ -541,6 +546,49 @@ export class Parser {
     return arms;
   }
 
+  // 함수 리터럴: fn(x: i32, y: i32) -> i32 { x + y }
+  private parseFnLit(): Expr {
+    const kw = this.advance(); // fn
+    this.expect(TokenType.LPAREN, "expected '(' after fn");
+
+    const params: FnParam[] = [];
+    if (!this.check(TokenType.RPAREN)) {
+      do {
+        const name = this.expectIdent("parameter name");
+        let type: TypeAnnotation | undefined = undefined;
+        if (this.match(TokenType.COLON)) {
+          type = this.parseType();
+        }
+        params.push({ name, type });
+      } while (this.match(TokenType.COMMA));
+    }
+    this.expect(TokenType.RPAREN, "expected ')' after parameters");
+
+    let returnType: TypeAnnotation | undefined = undefined;
+    if (this.match(TokenType.RARROW)) {
+      returnType = this.parseType();
+    }
+
+    // body
+    let body: Expr;
+    if (this.check(TokenType.LBRACE)) {
+      const bTok = this.advance(); // {
+      const stmts: Stmt[] = [];
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        stmts.push(this.parseStmt());
+      }
+      this.expect(TokenType.RBRACE, "expected '}'");
+      const lastExpr = stmts.length > 0 && stmts[stmts.length - 1].kind === "expr_stmt"
+        ? (stmts[stmts.length - 1] as any).expr
+        : null;
+      body = { kind: "block_expr", stmts: stmts.slice(0, lastExpr ? -1 : stmts.length), expr: lastExpr, line: bTok.line, col: bTok.col };
+    } else {
+      body = this.parseExpr(0);
+    }
+
+    return { kind: "fn_lit", params, returnType, body, line: kw.line, col: kw.col };
+  }
+
   // ============================================================
   // 패턴 파싱 (SPEC_05 Q8)
   // ============================================================
@@ -599,6 +647,25 @@ export class Parser {
 
   private parseType(): TypeAnnotation {
     const tok = this.peek();
+
+    // fn(T1, T2) -> R 함수 타입
+    if (tok.type === TokenType.FN) {
+      this.advance(); // fn
+      this.expect(TokenType.LPAREN, "expected '(' after fn");
+
+      const params: TypeAnnotation[] = [];
+      if (!this.check(TokenType.RPAREN)) {
+        do {
+          params.push(this.parseType());
+        } while (this.match(TokenType.COMMA));
+      }
+
+      this.expect(TokenType.RPAREN, "expected ')' after fn params");
+      this.expect(TokenType.RARROW, "expected '->' in fn type");
+      const returnType = this.parseType();
+
+      return { kind: "fn", params, returnType };
+    }
 
     switch (tok.type) {
       case TokenType.TYPE_I32: this.advance(); return { kind: "i32" };

@@ -15,7 +15,8 @@ export type TypeAnnotation =
   | { kind: "channel"; element: TypeAnnotation }
   | { kind: "option"; element: TypeAnnotation }
   | { kind: "result"; ok: TypeAnnotation; err: TypeAnnotation }
-  | { kind: "struct_ref"; name: string };
+  | { kind: "struct_ref"; name: string }
+  | { kind: "fn"; params: TypeAnnotation[]; returnType: TypeAnnotation };
 
 // ============================================================
 // 패턴 (Match Patterns) — SPEC_05 Q8: 7종
@@ -39,6 +40,11 @@ export type MatchArm = {
 // 식 (Expressions) — 값을 만든다
 // ============================================================
 
+export type FnParam = {
+  name: string;
+  type?: TypeAnnotation;
+};
+
 export type Expr =
   | { kind: "int_lit"; value: number; line: number; col: number }
   | { kind: "float_lit"; value: number; line: number; col: number }
@@ -56,6 +62,7 @@ export type Expr =
   | { kind: "match_expr"; subject: Expr; arms: MatchArm[]; line: number; col: number }
   | { kind: "array_lit"; elements: Expr[]; line: number; col: number }
   | { kind: "struct_lit"; fields: { name: string; value: Expr }[]; line: number; col: number }
+  | { kind: "fn_lit"; params: FnParam[]; returnType?: TypeAnnotation; body: Expr; line: number; col: number }
   | { kind: "block_expr"; stmts: Stmt[]; expr: Expr | null; line: number; col: number };
 
 // ============================================================

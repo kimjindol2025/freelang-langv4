@@ -54,6 +54,7 @@ export enum TokenType {
   NOT = "NOT",             // !
   QUESTION = "QUESTION",   // ?
   ARROW = "ARROW",         // =>
+  RARROW = "RARROW",       // ->
   COLON = "COLON",         // :
   COMMA = "COMMA",         // ,
   DOT = "DOT",             // .
@@ -211,6 +212,11 @@ export class Lexer {
     if (ch === "=" && this.peekNext() === ">") {
       this.advance(); this.advance();
       this.tokens.push({ type: TokenType.ARROW, lexeme: "=>", line: startLine, col: startCol });
+      return;
+    }
+    if (ch === "-" && this.peekNext() === ">") {
+      this.advance(); this.advance();
+      this.tokens.push({ type: TokenType.RARROW, lexeme: "->", line: startLine, col: startCol });
       return;
     }
     if (ch === "!" && this.peekNext() === "=") {
