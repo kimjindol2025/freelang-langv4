@@ -48,6 +48,7 @@ function infixBP(type: TokenType): number {
     case TokenType.PERCENT: return BP_MULTIPLICATIVE;
     case TokenType.LPAREN:
     case TokenType.LBRACKET:
+    case TokenType.LBRACE:
     case TokenType.DOT:
     case TokenType.QUESTION: return BP_POSTFIX;
     default: return 0;
@@ -148,7 +149,7 @@ export class Parser {
     this.expect(TokenType.RPAREN, "expected ')' after parameters");
 
     // 반환 타입 (필수 — SPEC_06: 함수 시그니처 명시)
-    this.expect(TokenType.COLON, "expected ':' for return type");
+    this.expect(TokenType.RARROW, "expected '->' for return type");
     const returnType = this.parseType();
 
     this.expect(TokenType.LBRACE, "expected '{' for function body");
@@ -362,11 +363,6 @@ export class Parser {
       return this.parseArrayLit();
     }
 
-    // 구조체 리터럴 (식 위치): { name: expr, ... }
-    if (tok.type === TokenType.LBRACE) {
-      return this.parseStructLit();
-    }
-
     // if 식 (식 위치)
     if (tok.type === TokenType.IF) {
       return this.parseIfExpr();
@@ -434,6 +430,22 @@ export class Parser {
       return { kind: "field_access", object: left, field, line: tok.line, col: tok.col };
     }
 
+    // 구조체 리터럴: ident { field: value, ... }
+    if (tok.type === TokenType.LBRACE && left.kind === "ident") {
+      this.advance(); // {
+      const fields: { name: string; value: Expr }[] = [];
+      if (!this.check(TokenType.RBRACE)) {
+        do {
+          const name = this.expectIdent("field name");
+          this.expect(TokenType.COLON, "expected ':' after field name");
+          const value = this.parseExpr(0);
+          fields.push({ name, value });
+        } while (this.match(TokenType.COMMA));
+      }
+      this.expect(TokenType.RBRACE, "expected '}'");
+      return { kind: "struct_lit", structName: left.name, fields, line: left.line, col: left.col };
+    }
+
     // try 연산자: expr?
     if (tok.type === TokenType.QUESTION) {
       this.advance();
@@ -465,21 +477,6 @@ export class Parser {
   }
 
   // 구조체 리터럴: { name: expr, ... }
-  private parseStructLit(): Expr {
-    const tok = this.advance(); // {
-    const fields: { name: string; value: Expr }[] = [];
-    if (!this.check(TokenType.RBRACE)) {
-      do {
-        const name = this.expectIdent("field name");
-        this.expect(TokenType.COLON, "expected ':' after field name");
-        const value = this.parseExpr(0);
-        fields.push({ name, value });
-      } while (this.match(TokenType.COMMA));
-    }
-    this.expect(TokenType.RBRACE, "expected '}'");
-    return { kind: "struct_lit", fields, line: tok.line, col: tok.col };
-  }
-
   // if 식 (식 위치, else 필수 — SPEC_06)
   private parseIfExpr(): Expr {
     const tok = this.advance(); // if

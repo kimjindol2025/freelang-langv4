@@ -287,7 +287,7 @@ export class TypeChecker {
 
     let declType: Type;
     if (stmt.type) {
-      declType = annotationToType(stmt.type);
+      declType = annotationToType(stmt.type, this.structs);
       if (!typesEqual(declType, initType) && initType.kind !== "unknown") {
         this.error(
           `type mismatch: declared ${typeToString(declType)}, got ${typeToString(initType)}`,
@@ -808,6 +808,27 @@ export class TypeChecker {
       this.checkExpr(expr.target);
     }
 
+    if (expr.target.kind === "field_access") {
+      const objType = this.checkExpr(expr.target.object);
+
+      if (objType.kind === "struct") {
+        const fieldType = objType.fields.get(expr.target.field);
+        if (!fieldType) {
+          this.error(`struct has no field '${expr.target.field}'`, expr.line, expr.col);
+          return { kind: "void" };
+        }
+
+        if (!typesEqual(fieldType, valType) && valType.kind !== "unknown") {
+          this.error(
+            `field assignment type mismatch: expected ${typeToString(fieldType)}, got ${typeToString(valType)}`,
+            expr.line, expr.col,
+          );
+        }
+      } else if (objType.kind !== "unknown") {
+        this.error(`cannot assign to field of ${typeToString(objType)}`, expr.line, expr.col);
+      }
+    }
+
     return { kind: "void" };
   }
 
@@ -889,12 +910,42 @@ export class TypeChecker {
   }
 
   private checkStructLit(expr: Expr & { kind: "struct_lit" }): Type {
+    // struct 정의 확인
+    const structDef = this.structs.get(expr.structName);
+    if (!structDef || structDef.kind !== "struct") {
+      this.error(`undefined struct: '${expr.structName}'`, expr.line, expr.col);
+      return { kind: "unknown" };
+    }
+
+    // 필드 타입 확인
     const fields = new Map<string, Type>();
     for (const f of expr.fields) {
       const fType = this.checkExpr(f.value);
-      fields.set(f.name, fType);
+      const expectedType = structDef.fields.get(f.name);
+
+      if (!expectedType) {
+        this.error(`struct '${expr.structName}' has no field '${f.name}'`, expr.line, expr.col);
+        fields.set(f.name, fType);
+        continue;
+      }
+
+      if (!typesEqual(fType, expectedType) && fType.kind !== "unknown") {
+        this.error(
+          `struct field '${f.name}' type mismatch: expected ${typeToString(expectedType)}, got ${typeToString(fType)}`,
+          expr.line, expr.col,
+        );
+      }
+      fields.set(f.name, expectedType);
     }
-    return { kind: "struct", fields };
+
+    // 모든 필드가 제공되었는지 확인
+    for (const [fieldName, fieldType] of structDef.fields.entries()) {
+      if (!fields.has(fieldName)) {
+        this.error(`struct '${expr.structName}' is missing field '${fieldName}'`, expr.line, expr.col);
+      }
+    }
+
+    return structDef;
   }
 
   private checkFnLit(expr: Expr & { kind: "fn_lit" }): Type {
