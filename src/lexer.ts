@@ -120,6 +120,9 @@ const KEYWORDS: Map<string, TokenType> = new Map([
   ["spawn", TokenType.SPAWN],
   ["true", TokenType.TRUE],
   ["false", TokenType.FALSE],
+  // 논리 연산자 키워드 (2) — && || 대신 사용 가능
+  ["and", TokenType.AND],
+  ["or", TokenType.OR],
   // 타입 이름 (7)
   ["i32", TokenType.TYPE_I32],
   ["i64", TokenType.TYPE_I64],
@@ -170,6 +173,12 @@ export class Lexer {
       this.advance();
       this.line++;
       this.col = 1;
+      return;
+    }
+
+    // # 주석 (FreeLang 고유)
+    if (ch === "#") {
+      this.skipHashComment();
       return;
     }
 
@@ -419,6 +428,15 @@ export class Lexer {
   private skipLineComment(): void {
     this.advance(); // 첫 번째 '/'
     this.advance(); // 두 번째 '/'
+    while (!this.isAtEnd() && this.peek() !== "\n") {
+      this.advance();
+    }
+    // '\n'은 소비하지 않음 — scanToken에서 줄 번호 처리
+  }
+
+  // # 주석 스캔 (FreeLang)
+  private skipHashComment(): void {
+    this.advance(); // '#' 소비
     while (!this.isAtEnd() && this.peek() !== "\n") {
       this.advance();
     }
