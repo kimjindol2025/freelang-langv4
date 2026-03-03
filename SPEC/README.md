@@ -39,7 +39,15 @@ FreeLang v4는 **특정 런타임 환경에 종속되지 않는 추상적 언어
 |------|------|-------|------|------|
 | **SPEC_09** | Struct System | 8.1 | ✅ Stable | SPEC_09_STRUCT_SYSTEM.md |
 | **SPEC_10** | First-Class Functions | 8.2 | ✅ Stable | SPEC_10_FIRST_CLASS_FUNCTIONS.md |
-| **SPEC_11** | Control Flow (while, for...of) | 8.3, 8.4 | ✅ Stable | SPEC_11_CONTROL_FLOW.md |
+| **SPEC_11** | Control Flow (while, for...of) | 8.3-8.4 | ✅ Stable | SPEC_11_CONTROL_FLOW.md |
+| **SPEC_12** | Pattern Matching | 8.5 | ✅ Stable | SPEC_12_PATTERN_MATCHING.md |
+| **SPEC_13** | Error Handling | 8.6 | ✅ Stable | SPEC_13_ERROR_HANDLING.md |
+
+### Architecture Specifications (아키텍처 명세)
+
+| SPEC | 제목 | 상태 | 파일 |
+|------|------|------|------|
+| **ISA v1.0** | Instruction Set Architecture | ✅ Stable | ISA_v1_0.md |
 
 ---
 
@@ -271,24 +279,30 @@ Output: results
 
 ---
 
-## 🚀 다음 단계
+## 🚀 로드맵
 
-### Phase 1: 현재 (완료)
-✅ SPEC_09, SPEC_10, SPEC_11 작성
+### ✅ Phase 1: Core SPEC (완료)
+✅ SPEC_04-08: 기본 명세 (Lexer, Parser, Type, Move, Scope)
 
-### Phase 2: 추가 명세 작성
-- [ ] SPEC_12: Pattern Matching (패턴 매칭)
-- [ ] SPEC_13: Error Handling (에러 처리)
+### ✅ Phase 2: Feature SPEC (완료)
+✅ SPEC_09-13: 기능 명세 (Struct, Functions, Control Flow, Pattern, Error)
+
+### ✅ Phase 3: Architecture SPEC (완료)
+✅ ISA v1.0: Instruction Set Architecture
+
+### 🔄 Phase 4: 추가 명세 작성
 - [ ] SPEC_14: Standard Library (표준 라이브러리)
+- [ ] SPEC_15: Module System (모듈 시스템, Phase 9)
+- [ ] SPEC_16: Concurrency (동시성, Phase 10)
 
-### Phase 3: VM/ISA 정의
-- [ ] ISA_v1.0: Instruction Set Architecture
-- [ ] VM_Execution: 가상 머신 실행 모델
+### 🚀 Phase 5: 참조 구현 완성
+- [ ] TypeScript: for...of, while, Struct, Functions 100% 구현
+- [ ] VM/Compiler: ISA v1.0 기반 바이트코드 생성
 
-### Phase 4: 다양한 구현
-- [ ] C 구현
-- [ ] Go 구현
-- [ ] Rust 구현
+### 🔮 Phase 6: 다양한 구현
+- [ ] C 구현 (성능)
+- [ ] Go 구현 (네트워크)
+- [ ] Rust 구현 (안전성)
 
 ---
 
