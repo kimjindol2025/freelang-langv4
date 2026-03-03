@@ -2,6 +2,7 @@
 // AST → Bytecode
 
 import { Program, Stmt, Expr, Pattern, MatchArm, Param, TypeAnnotation } from "./ast";
+import { IrValue, IrInst, IrFunction, IrProgram } from "./ir";
 
 // ============================================================
 // Opcodes
@@ -174,12 +175,19 @@ type LocalVar = {
 // Compiler
 // ============================================================
 
+type LoopLabel = {
+  loopStart: number;       // 루프 시작 (조건 계산)
+  breakPatches: number[];  // break JUMP placeholder 위치들
+  continuePatches: number[]; // continue JUMP placeholder 위치들 (for 루프에서만 필요)
+};
+
 export class Compiler {
   private chunk: Chunk = new Chunk();
   private locals: LocalVar[] = [];
   private scopeDepth: number = 0;
   private nextSlot: number = 0;
   private functionBodies: Map<string, Stmt & { kind: "fn_decl" }> = new Map();
+  private currentLoopLabels: LoopLabel[] = [];
 
   compile(program: Program): Chunk {
     // Pass 1: 함수 등록
@@ -211,6 +219,461 @@ export class Compiler {
   }
 
   // ============================================================
+  // IR → Bytecode (새 파이프라인)
+  // ============================================================
+
+  compileIR(ir: IrProgram): Chunk {
+    // Pass 1: 함수 등록
+    for (const fn of ir.functions) {
+      this.chunk.functions.push({
+        name: fn.name,
+        arity: fn.params.length,
+        offset: -1,
+      });
+    }
+
+    // Pass 2: main 코드 컴파일
+    for (const inst of ir.main) {
+      this.compileIrInst(inst);
+    }
+    this.chunk.emit(Op.HALT, 0);
+
+    // Pass 3: 함수 본문 컴파일
+    for (const fn of ir.functions) {
+      this.compileIrFunction(fn);
+    }
+
+    return this.chunk;
+  }
+
+  private irLabelOffsets: Map<string, number> = new Map();
+  private irLabelPatches: Map<string, number[]> = new Map();
+
+  private recordLabel(label: string): void {
+    this.irLabelOffsets.set(label, this.chunk.currentOffset());
+  }
+
+  private patchLabel(label: string): void {
+    const targets = this.irLabelPatches.get(label) || [];
+    const offset = this.irLabelOffsets.get(label);
+    if (offset !== undefined) {
+      for (const patchOffset of targets) {
+        this.chunk.patchI32(patchOffset, offset);
+      }
+      this.irLabelPatches.delete(label);
+    }
+  }
+
+  private emitJumpPlaceholder(label: string): number {
+    const offset = this.chunk.currentOffset();
+    this.chunk.emitI32(0, 0); // placeholder
+    const targets = this.irLabelPatches.get(label) || [];
+    targets.push(offset);
+    this.irLabelPatches.set(label, targets);
+    return offset;
+  }
+
+  private pushIrValue(val: IrValue): void {
+    switch (val.kind) {
+      case "const_i32":
+        this.chunk.emit(Op.PUSH_I32, 0);
+        this.chunk.emitI32(val.val, 0);
+        break;
+      case "const_f64":
+        this.chunk.emit(Op.PUSH_F64, 0);
+        this.chunk.emitF64(val.val, 0);
+        break;
+      case "const_str":
+        this.chunk.emit(Op.PUSH_STR, 0);
+        this.chunk.emitI32(this.chunk.addConstant(val.val), 0);
+        break;
+      case "const_bool":
+        if (val.val) {
+          this.chunk.emit(Op.PUSH_TRUE, 0);
+        } else {
+          this.chunk.emit(Op.PUSH_FALSE, 0);
+        }
+        break;
+      case "local":
+        // 로컬 변수는 LOAD_LOCAL로 로드
+        const slot = this.resolveLocal(val.name);
+        if (slot >= 0) {
+          this.chunk.emit(Op.LOAD_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        }
+        break;
+      case "global":
+        // 글로벌 변수는 LOAD_GLOBAL로 로드
+        this.chunk.emit(Op.LOAD_GLOBAL, 0);
+        this.chunk.emitI32(this.chunk.addConstant(val.name), 0);
+        break;
+      case "temp":
+        // temp는 로컬로 취급 (slot 할당 필요)
+        const tslot = this.resolveLocal(val.name);
+        if (tslot >= 0) {
+          this.chunk.emit(Op.LOAD_LOCAL, 0);
+          this.chunk.emitI32(tslot, 0);
+        }
+        break;
+    }
+  }
+
+  private compileIrInst(inst: IrInst): void {
+    switch (inst.kind) {
+      case "assign": {
+        this.pushIrValue(inst.src);
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          // 새 로컬 변수 선언
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "binop": {
+        this.pushIrValue(inst.left);
+        this.pushIrValue(inst.right);
+
+        // 연산자에 따른 Op 선택 (타입은 런타임에 결정됨)
+        switch (inst.op) {
+          case "+":
+            this.chunk.emit(Op.ADD_I32, 0); // 런타임에 타입 체크
+            break;
+          case "-":
+            this.chunk.emit(Op.SUB_I32, 0);
+            break;
+          case "*":
+            this.chunk.emit(Op.MUL_I32, 0);
+            break;
+          case "/":
+            this.chunk.emit(Op.DIV_I32, 0);
+            break;
+          case "%":
+            this.chunk.emit(Op.MOD_I32, 0);
+            break;
+          case "==":
+            this.chunk.emit(Op.EQ, 0);
+            break;
+          case "!=":
+            this.chunk.emit(Op.NEQ, 0);
+            break;
+          case "<":
+            this.chunk.emit(Op.LT, 0);
+            break;
+          case ">":
+            this.chunk.emit(Op.GT, 0);
+            break;
+          case "<=":
+            this.chunk.emit(Op.LTEQ, 0);
+            break;
+          case ">=":
+            this.chunk.emit(Op.GTEQ, 0);
+            break;
+          case "&&":
+            this.chunk.emit(Op.AND, 0);
+            break;
+          case "||":
+            this.chunk.emit(Op.OR, 0);
+            break;
+          default:
+            break;
+        }
+
+        // 결과를 dest에 저장
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "unop": {
+        this.pushIrValue(inst.src);
+        switch (inst.op) {
+          case "-":
+            this.chunk.emit(Op.NEG_I32, 0);
+            break;
+          case "!":
+            this.chunk.emit(Op.NOT, 0);
+            break;
+          default:
+            break;
+        }
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "label": {
+        this.recordLabel(inst.name);
+        break;
+      }
+
+      case "jump": {
+        this.chunk.emit(Op.JUMP, 0);
+        this.emitJumpPlaceholder(inst.target);
+        break;
+      }
+
+      case "jump_if_false": {
+        this.pushIrValue(inst.cond);
+        this.chunk.emit(Op.JUMP_IF_FALSE, 0);
+        this.emitJumpPlaceholder(inst.target);
+        break;
+      }
+
+      case "call": {
+        // 인수 푸시
+        for (const arg of inst.args) {
+          this.pushIrValue(arg);
+        }
+        // 함수 호출
+        this.chunk.emit(Op.CALL, 0);
+        this.chunk.emitI32(this.chunk.addConstant(inst.fn), 0);
+        this.chunk.emitByte(inst.args.length, 0);
+
+        // 결과 저장
+        if (inst.dest) {
+          const slot = this.resolveLocal(inst.dest);
+          if (slot >= 0) {
+            this.chunk.emit(Op.STORE_LOCAL, 0);
+            this.chunk.emitI32(slot, 0);
+          } else {
+            const newSlot = this.declareLocal(inst.dest);
+            this.chunk.emit(Op.STORE_LOCAL, 0);
+            this.chunk.emitI32(newSlot, 0);
+          }
+        }
+        break;
+      }
+
+      case "call_builtin": {
+        // 인수 푸시
+        for (const arg of inst.args) {
+          this.pushIrValue(arg);
+        }
+        // 내장 함수 호출
+        this.chunk.emit(Op.CALL_BUILTIN, 0);
+        this.chunk.emitI32(this.chunk.addConstant(inst.name), 0);
+        this.chunk.emitByte(inst.args.length, 0);
+
+        // 결과 저장
+        if (inst.dest) {
+          const slot = this.resolveLocal(inst.dest);
+          if (slot >= 0) {
+            this.chunk.emit(Op.STORE_LOCAL, 0);
+            this.chunk.emitI32(slot, 0);
+          } else {
+            const newSlot = this.declareLocal(inst.dest);
+            this.chunk.emit(Op.STORE_LOCAL, 0);
+            this.chunk.emitI32(newSlot, 0);
+          }
+        }
+        break;
+      }
+
+      case "return": {
+        if (inst.value) {
+          this.pushIrValue(inst.value);
+        } else {
+          this.chunk.emit(Op.PUSH_VOID, 0);
+        }
+        this.chunk.emit(Op.RETURN, 0);
+        break;
+      }
+
+      case "array_new": {
+        for (const elem of inst.elements) {
+          this.pushIrValue(elem);
+        }
+        this.chunk.emit(Op.ARRAY_NEW, 0);
+        this.chunk.emitI32(inst.elements.length, 0);
+
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "array_get": {
+        this.pushIrValue(inst.arr);
+        this.pushIrValue(inst.idx);
+        this.chunk.emit(Op.ARRAY_GET, 0);
+
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "array_set": {
+        this.pushIrValue(inst.arr);
+        this.pushIrValue(inst.idx);
+        this.pushIrValue(inst.value);
+        this.chunk.emit(Op.ARRAY_SET, 0);
+        break;
+      }
+
+      case "struct_new": {
+        // 각 필드마다: PUSH_STR(fieldName) + value
+        for (const field of inst.fields) {
+          this.chunk.emit(Op.PUSH_STR, 0);
+          this.chunk.emitI32(this.chunk.addConstant(field.name), 0);
+          this.pushIrValue(field.value);
+        }
+        this.chunk.emit(Op.STRUCT_NEW, 0);
+        this.chunk.emitI32(inst.fields.length, 0);
+
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "struct_get": {
+        this.pushIrValue(inst.obj);
+        this.chunk.emit(Op.STRUCT_GET, 0);
+        this.chunk.emitI32(this.chunk.addConstant(inst.field), 0);
+
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "struct_set": {
+        this.pushIrValue(inst.obj);
+        this.pushIrValue(inst.value);
+        this.chunk.emit(Op.STRUCT_SET, 0);
+        this.chunk.emitI32(this.chunk.addConstant(inst.field), 0);
+        break;
+      }
+
+      case "wrap_ok": {
+        this.pushIrValue(inst.value);
+        this.chunk.emit(Op.WRAP_OK, 0);
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "wrap_err": {
+        this.pushIrValue(inst.value);
+        this.chunk.emit(Op.WRAP_ERR, 0);
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+
+      case "unwrap": {
+        this.pushIrValue(inst.value);
+        this.chunk.emit(Op.UNWRAP, 0);
+        const slot = this.resolveLocal(inst.dest);
+        if (slot >= 0) {
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(slot, 0);
+        } else {
+          const newSlot = this.declareLocal(inst.dest);
+          this.chunk.emit(Op.STORE_LOCAL, 0);
+          this.chunk.emitI32(newSlot, 0);
+        }
+        break;
+      }
+    }
+  }
+
+  private compileIrFunction(fn: IrFunction): void {
+    const fnInfo = this.chunk.functions.find((f) => f.name === fn.name);
+    if (fnInfo) fnInfo.offset = this.chunk.currentOffset();
+
+    const prevLocals = this.locals;
+    const prevSlot = this.nextSlot;
+    const prevDepth = this.scopeDepth;
+
+    this.locals = [];
+    this.nextSlot = 0;
+    this.scopeDepth = 0;
+    this.irLabelOffsets.clear();
+    this.irLabelPatches.clear();
+
+    // 매개변수 선언
+    for (const param of fn.params) {
+      this.declareLocal(param);
+    }
+
+    // 함수 본문 컴파일
+    for (const inst of fn.insts) {
+      this.compileIrInst(inst);
+    }
+
+    // 명시적 return이 없으면 void return 추가
+    const lastInst = fn.insts[fn.insts.length - 1];
+    if (!lastInst || lastInst.kind !== "return") {
+      this.chunk.emit(Op.PUSH_VOID, 0);
+      this.chunk.emit(Op.RETURN, 0);
+    }
+
+    this.locals = prevLocals;
+    this.nextSlot = prevSlot;
+    this.scopeDepth = prevDepth;
+  }
+
+  // ============================================================
   // 문 컴파일
   // ============================================================
 
@@ -223,6 +686,8 @@ export class Compiler {
       case "for_stmt": return this.compileForStmt(stmt);
       case "for_of_stmt": return this.compileForOfStmt(stmt);
       case "while_stmt": return this.compileWhileStmt(stmt);
+      case "break_stmt": return this.compileBreakStmt(stmt);
+      case "continue_stmt": return this.compileContinueStmt(stmt);
       case "struct_decl": return; // 타입 선언, 런타임 불필요
       case "spawn_stmt": return this.compileSpawnStmt(stmt);
       case "return_stmt": return this.compileReturnStmt(stmt);
@@ -366,6 +831,10 @@ export class Compiler {
 
     const loopStart = this.chunk.currentOffset();
 
+    // 루프 레이블 푸시
+    const loopLabel: LoopLabel = { loopStart, breakPatches: [], continuePatches: [] };
+    this.currentLoopLabels.push(loopLabel);
+
     // 조건: idx < length(arr)
     this.chunk.emit(Op.LOAD_LOCAL, stmt.line);
     this.chunk.emitI32(idxSlot, stmt.line);
@@ -393,7 +862,8 @@ export class Compiler {
     for (const s of stmt.body) this.compileStmt(s);
     this.endScope(stmt.line);
 
-    // idx = idx + 1
+    // idx = idx + 1 (continueTarget 설정)
+    const continueTarget = this.chunk.currentOffset();
     this.chunk.emit(Op.LOAD_LOCAL, stmt.line);
     this.chunk.emitI32(idxSlot, stmt.line);
     this.chunk.emit(Op.PUSH_I32, stmt.line);
@@ -406,8 +876,22 @@ export class Compiler {
     this.chunk.emit(Op.JUMP, stmt.line);
     this.chunk.emitI32(loopStart, stmt.line);
 
-    // exit (패치)
-    this.chunk.patchI32(exitJump, this.chunk.currentOffset());
+    // exit 주소 결정 및 패치
+    const exitTarget = this.chunk.currentOffset();
+    this.chunk.patchI32(exitJump, exitTarget);
+
+    // break 문 모두 패치
+    for (const breakPatch of loopLabel.breakPatches) {
+      this.chunk.patchI32(breakPatch, exitTarget);
+    }
+
+    // continue 문 모두 패치 (for는 idx 증가로)
+    for (const continuePatch of loopLabel.continuePatches) {
+      this.chunk.patchI32(continuePatch, continueTarget);
+    }
+
+    // 루프 레이블 팝
+    this.currentLoopLabels.pop();
   }
 
   private compileForOfStmt(stmt: Stmt & { kind: "for_of_stmt" }): void {
@@ -429,6 +913,10 @@ export class Compiler {
     this.chunk.emitI32(itemSlot, stmt.line);
 
     const loopStart = this.chunk.currentOffset();
+
+    // 루프 레이블 푸시
+    const loopLabel: LoopLabel = { loopStart, breakPatches: [], continuePatches: [] };
+    this.currentLoopLabels.push(loopLabel);
 
     this.chunk.emit(Op.LOAD_LOCAL, stmt.line);
     this.chunk.emitI32(idxSlot, stmt.line);
@@ -454,6 +942,8 @@ export class Compiler {
     for (const s of stmt.body) this.compileStmt(s);
     this.endScope(stmt.line);
 
+    // idx = idx + 1 (continueTarget 설정)
+    const continueTarget = this.chunk.currentOffset();
     this.chunk.emit(Op.LOAD_LOCAL, stmt.line);
     this.chunk.emitI32(idxSlot, stmt.line);
     this.chunk.emit(Op.PUSH_I32, stmt.line);
@@ -465,11 +955,30 @@ export class Compiler {
     this.chunk.emit(Op.JUMP, stmt.line);
     this.chunk.emitI32(loopStart, stmt.line);
 
-    this.chunk.patchI32(exitJump, this.chunk.currentOffset());
+    // exit 주소 결정 및 패치
+    const exitTarget = this.chunk.currentOffset();
+    this.chunk.patchI32(exitJump, exitTarget);
+
+    // break 문 모두 패치
+    for (const breakPatch of loopLabel.breakPatches) {
+      this.chunk.patchI32(breakPatch, exitTarget);
+    }
+
+    // continue 문 모두 패치 (for는 idx 증가로)
+    for (const continuePatch of loopLabel.continuePatches) {
+      this.chunk.patchI32(continuePatch, continueTarget);
+    }
+
+    // 루프 레이블 팝
+    this.currentLoopLabels.pop();
   }
 
   private compileWhileStmt(stmt: Stmt & { kind: "while_stmt" }): void {
     const loopStart = this.chunk.currentOffset();
+
+    // 루프 레이블 푸시
+    const loopLabel: LoopLabel = { loopStart, breakPatches: [], continuePatches: [] };
+    this.currentLoopLabels.push(loopLabel);
 
     // 조건 계산
     this.compileExpr(stmt.condition);
@@ -486,8 +995,22 @@ export class Compiler {
     this.chunk.emit(Op.JUMP, stmt.line);
     this.chunk.emitI32(loopStart, stmt.line);
 
-    // exit (패치)
-    this.chunk.patchI32(exitJump, this.chunk.currentOffset());
+    // exit 주소 결정 및 패치
+    const exitTarget = this.chunk.currentOffset();
+    this.chunk.patchI32(exitJump, exitTarget);
+
+    // break 문 모두 패치
+    for (const breakPatch of loopLabel.breakPatches) {
+      this.chunk.patchI32(breakPatch, exitTarget);
+    }
+
+    // continue 문 모두 패치 (while은 loopStart로)
+    for (const continuePatch of loopLabel.continuePatches) {
+      this.chunk.patchI32(continuePatch, loopStart);
+    }
+
+    // 루프 레이블 팝
+    this.currentLoopLabels.pop();
   }
 
   private compileSpawnStmt(stmt: Stmt & { kind: "spawn_stmt" }): void {
@@ -517,6 +1040,28 @@ export class Compiler {
       this.chunk.emit(Op.PUSH_VOID, stmt.line);
     }
     this.chunk.emit(Op.RETURN, stmt.line);
+  }
+
+  private compileBreakStmt(stmt: Stmt & { kind: "break_stmt" }): void {
+    if (this.currentLoopLabels.length === 0) {
+      throw new Error("break 문이 루프 밖에 있습니다");
+    }
+    const loopLabel = this.currentLoopLabels[this.currentLoopLabels.length - 1];
+    this.chunk.emit(Op.JUMP, stmt.line);
+    const breakPatch = this.chunk.currentOffset();
+    this.chunk.emitI32(0, stmt.line); // placeholder
+    loopLabel.breakPatches.push(breakPatch);
+  }
+
+  private compileContinueStmt(stmt: Stmt & { kind: "continue_stmt" }): void {
+    if (this.currentLoopLabels.length === 0) {
+      throw new Error("continue 문이 루프 밖에 있습니다");
+    }
+    const loopLabel = this.currentLoopLabels[this.currentLoopLabels.length - 1];
+    this.chunk.emit(Op.JUMP, stmt.line);
+    const continuePatch = this.chunk.currentOffset();
+    this.chunk.emitI32(0, stmt.line); // placeholder
+    loopLabel.continuePatches.push(continuePatch);
   }
 
   private compileExprStmt(stmt: Stmt & { kind: "expr_stmt" }): void {

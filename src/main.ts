@@ -7,6 +7,7 @@ import { Parser } from "./parser";
 import { TypeChecker } from "./checker";
 import { Compiler } from "./compiler";
 import { VM } from "./vm";
+import { IRGen } from "./ir-gen";
 
 function main(): void {
   const args = process.argv.slice(2);
@@ -18,6 +19,8 @@ function main(): void {
     console.log("Options:");
     console.log("  --no-check   타입 체크 건너뛰기");
     console.log("  --dump-bc    바이트코드 덤프");
+    console.log("  --dump-ir    IR(중간 표현) 덤프");
+    console.log("  --use-ir     IR 경로로 컴파일");
     console.log("  --help       도움말");
     process.exit(0);
   }
@@ -25,6 +28,8 @@ function main(): void {
   const file = args[0];
   const noCheck = args.includes("--no-check");
   const dumpBc = args.includes("--dump-bc");
+  const dumpIr = args.includes("--dump-ir");
+  const useIr = args.includes("--use-ir") || dumpIr;
 
   // 파일 읽기
   let source: string;
@@ -64,8 +69,18 @@ function main(): void {
     }
   }
 
-  // 4. Compiler
-  const chunk = new Compiler().compile(program);
+  // 4. Compiler (IR 경로 vs 기존 경로)
+  let chunk;
+  if (useIr) {
+    const irProg = new IRGen().generate(program);  // AST → IR
+    if (dumpIr) {
+      console.log(JSON.stringify(irProg, null, 2));
+      process.exit(0);
+    }
+    chunk = new Compiler().compileIR(irProg);      // IR → Chunk
+  } else {
+    chunk = new Compiler().compile(program);       // 기존 경로 유지
+  }
 
   if (dumpBc) {
     console.log(`--- bytecode (${chunk.code.length} bytes, ${chunk.functions.length} functions) ---`);
