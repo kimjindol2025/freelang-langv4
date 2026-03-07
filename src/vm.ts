@@ -222,10 +222,47 @@ export class VM {
         }
 
         // ---- f64 산술 ----
-        case Op.ADD_F64: case Op.SUB_F64: case Op.MUL_F64:
-        case Op.DIV_F64: case Op.MOD_F64: case Op.NEG_F64:
-          // i32와 동일 로직 (JS는 number 통일)
+        case Op.ADD_F64: {
+          const b = actor.stack.pop()!;
+          const a = actor.stack.pop()!;
+          if (a.tag === "str" && b.tag === "str") {
+            actor.stack.push({ tag: "str", val: a.val + b.val });
+          } else {
+            actor.stack.push({ tag: "f64", val: (a as any).val + (b as any).val });
+          }
           break;
+        }
+        case Op.SUB_F64: {
+          const b = actor.stack.pop()!;
+          const a = actor.stack.pop()!;
+          actor.stack.push({ tag: "f64", val: (a as any).val - (b as any).val });
+          break;
+        }
+        case Op.MUL_F64: {
+          const b = actor.stack.pop()!;
+          const a = actor.stack.pop()!;
+          actor.stack.push({ tag: "f64", val: (a as any).val * (b as any).val });
+          break;
+        }
+        case Op.DIV_F64: {
+          const b = actor.stack.pop()!;
+          const a = actor.stack.pop()!;
+          if ((b as any).val === 0) throw new Error("panic: division by zero");
+          actor.stack.push({ tag: "f64", val: (a as any).val / (b as any).val });
+          break;
+        }
+        case Op.MOD_F64: {
+          const b = actor.stack.pop()!;
+          const a = actor.stack.pop()!;
+          if ((b as any).val === 0) throw new Error("panic: division by zero");
+          actor.stack.push({ tag: "f64", val: (a as any).val % (b as any).val });
+          break;
+        }
+        case Op.NEG_F64: {
+          const a = actor.stack.pop()!;
+          actor.stack.push({ tag: "f64", val: -(a as any).val });
+          break;
+        }
 
         // ---- 비교 ----
         case Op.EQ: {

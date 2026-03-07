@@ -1284,9 +1284,8 @@ export class Compiler {
   }
 
   private compileAssign(expr: Expr & { kind: "assign" }): void {
-    this.compileExpr(expr.value);
-
     if (expr.target.kind === "ident") {
+      this.compileExpr(expr.value);
       const slot = this.resolveLocal(expr.target.name);
       if (slot !== -1) {
         this.chunk.emit(Op.STORE_LOCAL, expr.line);
@@ -1296,8 +1295,11 @@ export class Compiler {
         this.chunk.emitI32(this.chunk.addConstant(expr.target.name), expr.line);
       }
     } else if (expr.target.kind === "index") {
+      // Stack order: array, index, value
+      // VM ARRAY_SET pops: val=pop(), idx=pop(), arr=pop()
       this.compileExpr(expr.target.object);
       this.compileExpr(expr.target.index);
+      this.compileExpr(expr.value);
       this.chunk.emit(Op.ARRAY_SET, expr.line);
     }
   }
