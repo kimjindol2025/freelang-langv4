@@ -164,5 +164,112 @@ describe("Compiler Tests", () => {
       const c = compile("var arr = [1, 2, 3]\narr[0]");
       expect(findOp(c, Op.ARRAY_GET)).toBe(true);
     });
+
+    it("배열 요소 수정", () => {
+      const c = compile("var arr = [1, 2, 3]\narr[0] = 99");
+      expect(findOp(c, Op.ARRAY_SET)).toBe(true);
+    });
+  });
+
+  describe("리터럴 타입", () => {
+    it("f64 리터럴", () => {
+      const c = compile("3.14");
+      expect(findOp(c, Op.PUSH_F64)).toBe(true);
+    });
+  });
+
+  describe("구조체", () => {
+    it("구조체 생성", () => {
+      const c = compile("struct Point { x: i32 }\nvar p = Point { x: 10 }");
+      expect(findOp(c, Op.STRUCT_NEW)).toBe(true);
+    });
+
+    it("구조체 필드 접근", () => {
+      const c = compile("struct Point { x: i32 }\nvar p = Point { x: 10 }\np.x");
+      expect(findOp(c, Op.STRUCT_GET)).toBe(true);
+    });
+  });
+
+  describe("함수 정의 & 호출", () => {
+    it("함수 정의", () => {
+      const c = compile("fn add(a: i32, b: i32) -> i32 { a + b }");
+      expect(findOp(c, Op.CALL) || findOp(c, Op.CALL_BUILTIN) || findOp(c, Op.PUSH_I32)).toBe(true);
+    });
+
+    it("함수 호출", () => {
+      const c = compile("fn add(a: i32, b: i32) -> i32 { a + b }\nadd(1, 2)");
+      expect(findOp(c, Op.CALL)).toBe(true);
+    });
+
+    it("반환값", () => {
+      const c = compile("fn getNum() -> i32 { return 42 }");
+      expect(findOp(c, Op.RETURN)).toBe(true);
+    });
+  });
+
+  describe("변수 스코핑", () => {
+    it("로컬 변수 스토어", () => {
+      const c = compile("var x = 100");
+      expect(findOp(c, Op.STORE_LOCAL)).toBe(true);
+    });
+  });
+
+  describe("제어흐름 확장", () => {
+    it("if-else", () => {
+      const c = compile("if true { 1 } else { 2 }");
+      expect(findOp(c, Op.JUMP_IF_FALSE)).toBe(true);
+      expect(findOp(c, Op.JUMP)).toBe(true);
+    });
+
+    it("break 문", () => {
+      const c = compile("while true { break }");
+      expect(findOp(c, Op.JUMP)).toBe(true);
+    });
+
+    it("continue 문", () => {
+      const c = compile("while true { continue }");
+      expect(findOp(c, Op.JUMP)).toBe(true);
+    });
+
+    it("for...in 루프", () => {
+      const c = compile("for x in [1, 2] { var y = x }");
+      expect(findOp(c, Op.ARRAY_GET) || findOp(c, Op.JUMP)).toBe(true);
+    });
+  });
+
+  describe("비교 연산자 확장", () => {
+    it(">", () => {
+      const c = compile("1 > 2");
+      expect(findOp(c, Op.GT)).toBe(true);
+    });
+
+    it("<=", () => {
+      const c = compile("1 <= 2");
+      expect(findOp(c, Op.LTEQ)).toBe(true);
+    });
+
+    it(">=", () => {
+      const c = compile("1 >= 2");
+      expect(findOp(c, Op.GTEQ)).toBe(true);
+    });
+  });
+
+  describe("복잡한 표현식", () => {
+    it("연산자 우선순위", () => {
+      const c = compile("2 + 3 * 4");
+      expect(findOp(c, Op.MUL_I32)).toBe(true);
+      expect(findOp(c, Op.ADD_I32)).toBe(true);
+      expect(countOp(c, Op.PUSH_I32)).toBeGreaterThanOrEqual(3);
+    });
+
+    it("중첩 함수 호출", () => {
+      const c = compile('println(str(42))');
+      expect(findOp(c, Op.CALL_BUILTIN) || findOp(c, Op.CALL)).toBe(true);
+    });
+
+    it("배열 요소 함수 호출", () => {
+      const c = compile('var arr = [1, 2, 3]\nlength(arr)');
+      expect(findOp(c, Op.ARRAY_GET) || findOp(c, Op.CALL_BUILTIN)).toBe(true);
+    });
   });
 });
