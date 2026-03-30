@@ -3,7 +3,7 @@
 
 import { Token, TokenType } from "./lexer";
 import {
-  Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param, StructField, FnParam,
+  Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param, StructField, FnParam, ImportDecl, ExportDecl, ImportItem,
 } from "./ast";
 
 // ============================================================
@@ -46,6 +46,7 @@ function infixBP(type: TokenType): number {
     case TokenType.STAR:
     case TokenType.SLASH:
     case TokenType.PERCENT: return BP_MULTIPLICATIVE;
+    case TokenType.LARROW: return BP_ASSIGN;  // 채널 송신
     case TokenType.LPAREN:
     case TokenType.LBRACKET:
     case TokenType.DOT:
@@ -88,14 +89,23 @@ export class Parser {
     const tok = this.peek();
 
     switch (tok.type) {
+      case TokenType.IMPORT:
+        return this.parseImportStmt();
+      case TokenType.EXPORT:
+        return this.parseExportStmt();
       case TokenType.VAR:
       case TokenType.LET:
       case TokenType.CONST:
         return this.parseVarDecl();
+      case TokenType.ASYNC:
       case TokenType.FN:
         return this.parseFnDecl();
       case TokenType.STRUCT:
         return this.parseStructDecl();
+      case TokenType.TRAIT:
+        return this.parseTraitDecl();
+      case TokenType.IMPL:
+        return this.parseImplDecl();
       case TokenType.IF:
         return this.parseIfStmt();
       case TokenType.MATCH:
@@ -136,9 +146,17 @@ export class Parser {
     return { kind: "var_decl", name, mutable, type, init, line: kw.line, col: kw.col };
   }
 
-  // fn 선언
+  // fn 선언 (async fn 지원)
   private parseFnDecl(): Stmt {
-    const kw = this.advance(); // fn
+    let isAsync = false;
+    let kw = this.peek();
+
+    // async 키워드 확인
+    if (this.match(TokenType.ASYNC)) {
+      isAsync = true;
+    }
+
+    kw = this.advance(); // fn
     const name = this.expectIdent("function name");
 
     // Generic 타입 파라미터: fn foo<T, K>(...) [STEP B-1]
@@ -170,7 +188,7 @@ export class Parser {
     this.expect(TokenType.LBRACE, "expected '{' for function body");
     const body = this.parseBlock();
 
-    return { kind: "fn_decl", name, typeParams, params, returnType, body, line: kw.line, col: kw.col };
+    return { kind: "fn_decl", name, isAsync, typeParams, params, returnType, body, line: kw.line, col: kw.col };
   }
 
   // struct 선언
@@ -202,6 +220,152 @@ export class Parser {
     this.expect(TokenType.RBRACE, "expected '}' to close struct");
 
     return { kind: "struct_decl", name, typeParams, fields, line: kw.line, col: kw.col };
+  }
+
+  // trait 선언
+  private parseTraitDecl(): Stmt {
+    const kw = this.advance(); // trait
+    const name = this.expectIdent("trait name");
+
+    // Generic 타입 파라미터
+    const typeParams: string[] = [];
+    if (this.match(TokenType.LT)) {
+      do {
+        typeParams.push(this.expectIdent("type parameter"));
+      } while (this.match(TokenType.COMMA));
+      this.expect(TokenType.GT, "expected '>' after type parameters");
+    }
+
+    this.expect(TokenType.LBRACE, "expected '{' after trait name");
+
+    const methods: any[] = [];
+    if (!this.check(TokenType.RBRACE)) {
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        const mLine = this.peek().line;
+        const mCol = this.peek().col;
+        this.expect(TokenType.FN, "expected 'fn' in trait method");
+        const methodName = this.expectIdent("method name");
+
+        this.expect(TokenType.LPAREN, "expected '(' after method name");
+        const params: Param[] = [];
+        if (!this.check(TokenType.RPAREN)) {
+          do {
+            const pName = this.expectIdent("parameter name");
+            // self는 타입 명시 없음
+            if (pName === "self") {
+              if (this.check(TokenType.COMMA)) {
+                this.advance(); // consume comma
+                params.push({ name: pName, type: { kind: "self_type" } });
+                continue;
+              } else if (this.check(TokenType.RPAREN)) {
+                params.push({ name: pName, type: { kind: "self_type" } });
+                break;
+              }
+            }
+            // 일반 파라미터
+            this.expect(TokenType.COLON, "expected ':' after parameter name");
+            const pType = this.parseType();
+            params.push({ name: pName, type: pType });
+          } while (this.match(TokenType.COMMA));
+        }
+        this.expect(TokenType.RPAREN, "expected ')' after method parameters");
+
+        this.expect(TokenType.RARROW, "expected '->' for return type");
+        const returnType = this.parseType();
+        this.match(TokenType.SEMICOLON);
+
+        methods.push({ name: methodName, params, returnType, line: mLine, col: mCol });
+      }
+    }
+
+    this.expect(TokenType.RBRACE, "expected '}' to close trait");
+
+    return { kind: "trait_decl", name, typeParams, methods, line: kw.line, col: kw.col };
+  }
+
+  // impl 선언
+  private parseImplDecl(): Stmt {
+    const kw = this.advance(); // impl
+
+    // Generic 타입 파라미터
+    const typeParams: string[] = [];
+    if (this.match(TokenType.LT)) {
+      do {
+        typeParams.push(this.expectIdent("type parameter"));
+      } while (this.match(TokenType.COMMA));
+      this.expect(TokenType.GT, "expected '>' after type parameters");
+    }
+
+    // Trait name: impl [Drawable] for Circle
+    let trait: string | null = null;
+    let forType: TypeAnnotation;
+
+    // Check if it's "impl Trait for Type" or just "impl Type"
+    const savedPos = this.pos;
+    if (this.peek().type === TokenType.IDENT) {
+      const firstIdent = this.peek().lexeme;
+      this.advance(); // consume identifier
+
+      if (this.match(TokenType.FOR)) {
+        // It was "impl Trait for Type"
+        trait = firstIdent;
+        forType = this.parseType();
+      } else {
+        // It was "impl Type" (inherent impl) — reset and parse as type
+        this.pos = savedPos;
+        forType = this.parseType();
+      }
+    } else {
+      forType = this.parseType();
+    }
+
+    this.expect(TokenType.LBRACE, "expected '{' for impl body");
+
+    const methods: any[] = [];
+    if (!this.check(TokenType.RBRACE)) {
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        const mLine = this.peek().line;
+        const mCol = this.peek().col;
+        this.expect(TokenType.FN, "expected 'fn' in impl method");
+        const methodName = this.expectIdent("method name");
+
+        this.expect(TokenType.LPAREN, "expected '(' after method name");
+        const params: Param[] = [];
+        if (!this.check(TokenType.RPAREN)) {
+          do {
+            const pName = this.expectIdent("parameter name");
+            // self는 타입 명시 없음
+            if (pName === "self") {
+              if (this.check(TokenType.COMMA)) {
+                this.advance(); // consume comma
+                params.push({ name: pName, type: { kind: "self_type" } });
+                continue;
+              } else if (this.check(TokenType.RPAREN)) {
+                params.push({ name: pName, type: { kind: "self_type" } });
+                break;
+              }
+            }
+            // 일반 파라미터
+            this.expect(TokenType.COLON, "expected ':' after parameter name");
+            const pType = this.parseType();
+            params.push({ name: pName, type: pType });
+          } while (this.match(TokenType.COMMA));
+        }
+        this.expect(TokenType.RPAREN, "expected ')' after method parameters");
+
+        this.expect(TokenType.RARROW, "expected '->' for return type");
+        const returnType = this.parseType();
+
+        this.expect(TokenType.LBRACE, "expected '{' for method body");
+        const body = this.parseBlock();
+
+        methods.push({ name: methodName, params, returnType, body, line: mLine, col: mCol });
+      }
+    }
+
+    this.expect(TokenType.RBRACE, "expected '}' to close impl");
+
+    return { kind: "impl_decl", trait, forType, typeParams, methods, line: kw.line, col: kw.col };
   }
 
   // if 문 (문 위치)
@@ -292,6 +456,69 @@ export class Parser {
     const body = this.parseBlock();
 
     return { kind: "spawn_stmt", body, line: kw.line, col: kw.col };
+  }
+
+  // import 문 파싱
+  private parseImportStmt(): ImportDecl {
+    const kw = this.advance(); // import
+    const items: ImportItem[] = [];
+    let default_ = false;
+
+    if (this.check(TokenType.LBRACE)) {
+      this.advance(); // {
+      if (!this.check(TokenType.RBRACE)) {
+        do {
+          const name = this.expectIdent("imported name");
+          let alias: string | undefined;
+          if (this.match(TokenType.AS)) {
+            alias = this.expectIdent("alias");
+          }
+          items.push({ name, alias });
+        } while (this.match(TokenType.COMMA));
+      }
+      this.expect(TokenType.RBRACE, "expected '}' after import items");
+    } else {
+      const name = this.expectIdent("module name");
+      items.push({ name });
+      default_ = true;
+    }
+
+    this.expect(TokenType.FROM, "expected 'from' in import statement");
+    const sourceToken = this.peek();
+    if (sourceToken.type !== TokenType.STRING_LIT) {
+      this.error("expected string literal for module source", sourceToken);
+      throw new Error("expected module path");
+    }
+    const source = this.advance().lexeme;
+    this.match(TokenType.SEMICOLON);
+
+    return { kind: "import_decl", source, items, default: default_, line: kw.line, col: kw.col };
+  }
+
+  // export 문 파싱
+  private parseExportStmt(): ExportDecl {
+    const kw = this.advance(); // export
+
+    if (this.check(TokenType.FN) || this.check(TokenType.STRUCT)) {
+      const target = this.parseStmt();
+      return { kind: "export_decl", target, line: kw.line, col: kw.col };
+    }
+
+    if (this.check(TokenType.LBRACE)) {
+      this.advance(); // {
+      const names: string[] = [];
+      if (!this.check(TokenType.RBRACE)) {
+        do {
+          names.push(this.expectIdent("export name"));
+        } while (this.match(TokenType.COMMA));
+      }
+      this.expect(TokenType.RBRACE, "expected '}' after export names");
+      this.match(TokenType.SEMICOLON);
+      return { kind: "export_decl", target: names, line: kw.line, col: kw.col };
+    }
+
+    this.error("expected 'fn', 'struct', or '{' after 'export'", kw);
+    throw new Error("invalid export syntax");
   }
 
   // return 문
@@ -424,10 +651,22 @@ export class Parser {
       return { kind: "bool_lit", value: false, line: tok.line, col: tok.col };
     }
 
-    // 식별자 (channel도 식 위치에서는 함수 이름으로 사용)
+    // 식별자 또는 channel<T>
     if (tok.type === TokenType.IDENT || tok.type === TokenType.TYPE_CHANNEL) {
-      this.advance();
-      return { kind: "ident", name: tok.lexeme, line: tok.line, col: tok.col };
+      const identTok = this.advance();
+      const name = identTok.lexeme;
+
+      // channel<T> 특별 처리
+      if (name === "channel" && this.check(TokenType.LT)) {
+        this.advance(); // <
+        const element = this.parseType();
+        this.expect(TokenType.GT, "expected '>' after channel type");
+        this.expect(TokenType.LPAREN, "expected '()' after channel<T>");
+        this.expect(TokenType.RPAREN, "expected ')'");
+        return { kind: "chan_new", element, line: identTok.line, col: identTok.col };
+      }
+
+      return { kind: "ident", name, line: identTok.line, col: identTok.col };
     }
 
     // 단항 연산자: - !
@@ -435,6 +674,13 @@ export class Parser {
       this.advance();
       const operand = this.parseExpr(BP_UNARY);
       return { kind: "unary", op: tok.lexeme, operand, line: tok.line, col: tok.col };
+    }
+
+    // await 연산자
+    if (tok.type === TokenType.AWAIT) {
+      this.advance();
+      const expr = this.parseExpr(BP_UNARY);
+      return { kind: "await", expr, line: tok.line, col: tok.col };
     }
 
     // 괄호 그룹: ( expr )
@@ -465,6 +711,13 @@ export class Parser {
       return this.parseFnLit();
     }
 
+    // 채널 수신: <- chan
+    if (tok.type === TokenType.LARROW) {
+      this.advance();
+      const chan = this.parseExpr(BP_UNARY);
+      return { kind: "chan_recv", chan, line: tok.line, col: tok.col };
+    }
+
     this.error(`unexpected token: ${tok.lexeme}`, tok);
     this.advance();
     return { kind: "ident", name: "__error__", line: tok.line, col: tok.col };
@@ -473,6 +726,10 @@ export class Parser {
   // led — infix/postfix 위치
   private led(left: Expr, bp: number): Expr {
     const tok = this.peek();
+
+    // 함수 호출: expr(args) 형태만 지원 (generic call은 제한)
+    // 제네릭 호출은 <T> 타입 인자를 파싱하기 위해 복잡한 lookahead가 필요하므로,
+    // 여기서는 skip하고 나중에 추가 개선
 
     // 이항 연산자
     if (
@@ -489,7 +746,6 @@ export class Parser {
       return { kind: "binary", op: tok.lexeme, left, right, line: tok.line, col: tok.col };
     }
 
-    // 함수 호출: expr(args)
     if (tok.type === TokenType.LPAREN) {
       this.advance();
       const args: Expr[] = [];
@@ -521,6 +777,13 @@ export class Parser {
     if (tok.type === TokenType.QUESTION) {
       this.advance();
       return { kind: "try", operand: left, line: tok.line, col: tok.col };
+    }
+
+    // 채널 송신: chan <- value
+    if (tok.type === TokenType.LARROW) {
+      this.advance();
+      const value = this.parseExpr(BP_ASSIGN);
+      return { kind: "chan_send", chan: left, value, line: tok.line, col: tok.col };
     }
 
     // 할당은 ExprStmt에서 처리하므로 여기선 패스
@@ -588,6 +851,13 @@ export class Parser {
     const arms: MatchArm[] = [];
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
       const pattern = this.parsePattern();
+
+      // Guard 절 파싱: if 조건
+      let guard: Expr | undefined = undefined;
+      if (this.match(TokenType.IF)) {
+        guard = this.parseExpr(0);
+      }
+
       this.expect(TokenType.ARROW, "expected '=>' after pattern");
 
       let body: Expr;
@@ -609,7 +879,7 @@ export class Parser {
       }
 
       this.match(TokenType.COMMA); // trailing comma optional
-      arms.push({ pattern, body });
+      arms.push({ pattern, guard, body });
     }
     return arms;
   }
@@ -685,9 +955,78 @@ export class Parser {
         this.advance();
         return { kind: "none" };
       }
-      // 일반 식별자 바인딩
+
+      // 구조 분해: Point { x, y }, Point { x as px, y as py }, Point { name, .. }
+      const ident = tok.lexeme;
       this.advance();
-      return { kind: "ident", name: tok.lexeme };
+
+      if (this.check(TokenType.LBRACE)) {
+        this.advance(); // {
+        const fields: { name: string; pattern: Pattern; alias?: string }[] = [];
+        let rest = false;
+
+        // 구조체 필드 파싱 (빈 중괄호도 허용)
+        if (!this.check(TokenType.RBRACE)) {
+          while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+            if (this.match(TokenType.DOTDOT)) {
+              rest = true;
+              break;
+            }
+
+            const fieldName = this.expectIdent("field name");
+            let fieldPattern: Pattern;
+            let alias: string | undefined = undefined;
+
+            if (this.match(TokenType.AS)) {
+              alias = this.expectIdent("alias name");
+              fieldPattern = { kind: "ident", name: alias };
+            } else {
+              fieldPattern = { kind: "ident", name: fieldName };
+            }
+
+            fields.push({ name: fieldName, pattern: fieldPattern, alias });
+
+            if (!this.match(TokenType.COMMA)) break;
+          }
+        }
+
+        this.expect(TokenType.RBRACE, "expected '}'");
+        return { kind: "struct", name: ident, fields, rest };
+      }
+
+      // 일반 식별자 바인딩
+      return { kind: "ident", name: ident };
+    }
+
+    // 배열 분해: [a, b, c], [x, .., y]
+    if (tok.type === TokenType.LBRACKET) {
+      this.advance(); // [
+      const elements: Pattern[] = [];
+      let rest = false;
+      let restIndex: number | undefined = undefined;
+
+      while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+        if (this.check(TokenType.DOTDOT)) {
+          this.advance(); // ..
+          rest = true;
+          restIndex = elements.length;
+          if (this.match(TokenType.COMMA)) {
+            // [x, .., y] 형태: 나머지 후 계속
+            while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+              elements.push(this.parsePattern());
+              if (!this.match(TokenType.COMMA)) break;
+            }
+          }
+          break;
+        }
+
+        elements.push(this.parsePattern());
+
+        if (!this.match(TokenType.COMMA)) break;
+      }
+
+      this.expect(TokenType.RBRACKET, "expected ']'");
+      return { kind: "array", elements, rest, restIndex };
     }
 
     // 리터럴 패턴
@@ -785,6 +1124,7 @@ export class Parser {
         // 내장 제네릭 타입 매핑
         if (name === "Option") return { kind: "option", element: typeArgs[0] };
         if (name === "Result") return { kind: "result", ok: typeArgs[0], err: typeArgs[1] };
+        if (name === "Promise") return { kind: "promise", element: typeArgs[0] };
         return { kind: "generic_ref", name, typeArgs };
       }
 
@@ -850,7 +1190,7 @@ export class Parser {
     return t === TokenType.VAR || t === TokenType.LET || t === TokenType.CONST ||
            t === TokenType.FN || t === TokenType.STRUCT || t === TokenType.IF || t === TokenType.MATCH ||
            t === TokenType.FOR || t === TokenType.WHILE || t === TokenType.BREAK || t === TokenType.CONTINUE ||
-           t === TokenType.SPAWN || t === TokenType.RETURN;
+           t === TokenType.SPAWN || t === TokenType.RETURN || t === TokenType.IMPORT || t === TokenType.EXPORT;
   }
 
   private error(message: string, tok: Token): void {

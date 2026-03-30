@@ -1,7 +1,7 @@
 // FreeLang v4 — TypeChecker (SPEC_06, 07, 08 구현)
 // 정적 타입 검사 + Move/Copy 추적 + 스코프 관리
 
-import { Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param } from "./ast";
+import { Program, Stmt, Expr, TypeAnnotation, Pattern, MatchArm, Param, ImportDecl, ExportDecl } from "./ast";
 
 // ============================================================
 // 내부 타입 표현
@@ -18,10 +18,12 @@ export type Type =
   | { kind: "channel"; element: Type }
   | { kind: "option"; element: Type }
   | { kind: "result"; ok: Type; err: Type }
+  | { kind: "promise"; element: Type }
   | { kind: "struct"; fields: Map<string, Type> }
   | { kind: "fn"; params: Type[]; returnType: Type }
   | { kind: "type_param"; name: string }                            // 제네릭 타입 파라미터 (T, K, V)
   | { kind: "generic_ref"; name: string; typeArgs: Type[] }         // 제네릭 타입 참조 (List<T>)
+  | { kind: "trait"; name: string; methods: Map<string, { params: Type[]; returnType: Type }> }  // Trait
   | { kind: "unknown" };
 
 // ============================================================
@@ -53,6 +55,19 @@ type VarInfo = {
 type FnInfo = {
   params: { name: string; type: Type }[];
   returnType: Type;
+};
+
+// Generic 함수 정의 저장
+type GenericFnDef = {
+  typeParams: string[];
+  params: { name: string; type: Type }[];
+  returnType: Type;
+};
+
+// Generic 구조체 정의 저장
+type GenericStructDef = {
+  typeParams: string[];
+  fields: Map<string, Type>;
 };
 
 // ============================================================
@@ -96,6 +111,8 @@ function isCopyType(t: Type): boolean {
       return isCopyType(t.element);
     case "result":
       return isCopyType(t.ok) && isCopyType(t.err);
+    case "promise":
+      return false; // Promise는 Move 타입
     case "struct":
       return true;  // struct도 자동 복사본 전달 (SPEC_09: Copy-on-Pass)
     case "channel":
@@ -105,6 +122,8 @@ function isCopyType(t: Type): boolean {
       return true;  // Generic 타입 파라미터는 Copy로 취급 (Type Erasure)
     case "generic_ref":
       return true;  // Generic 타입도 기본적으로 Copy
+    case "trait":
+      return true;  // Trait은 기본적으로 Copy
     default:
       return true;
   }
@@ -131,6 +150,8 @@ function typesEqual(a: Type, b: Type): boolean {
       return typesEqual(a.element, (b as any).element);
     case "result":
       return typesEqual(a.ok, (b as any).ok) && typesEqual(a.err, (b as any).err);
+    case "promise":
+      return typesEqual(a.element, (b as any).element);
     case "struct": {
       const bStruct = b as { kind: "struct"; fields: Map<string, Type> };
       if (a.fields.size !== bStruct.fields.size) return false;
@@ -157,6 +178,10 @@ function typesEqual(a: Type, b: Type): boolean {
       }
       return true;
     }
+    case "trait": {
+      const bTrait = b as { kind: "trait"; name: string };
+      return a.name === bTrait.name;
+    }
     default:
       return false;
   }
@@ -170,6 +195,7 @@ function typeToString(t: Type): string {
     case "channel": return `channel<${typeToString(t.element)}>`;
     case "option": return `Option<${typeToString(t.element)}>`;
     case "result": return `Result<${typeToString(t.ok)}, ${typeToString(t.err)}>`;
+    case "promise": return `Promise<${typeToString(t.element)}>`;
     case "struct": {
       const fields = [...t.fields.entries()].map(([k, v]) => `${k}: ${typeToString(v)}`).join(", ");
       return `{ ${fields} }`;
@@ -184,7 +210,58 @@ function typeToString(t: Type): string {
       const typeArgStr = t.typeArgs.map(typeToString).join(", ");
       return `${t.name}<${typeArgStr}>`;
     }
+    case "trait":
+      return `trait ${t.name}`;
     case "unknown": return "unknown";
+  }
+}
+
+// ============================================================
+// 제네릭 타입 치환 — substituteType
+// ============================================================
+
+function substituteType(t: Type, bindings: Map<string, Type>): Type {
+  switch (t.kind) {
+    case "type_param": {
+      return bindings.get(t.name) ?? t;
+    }
+    case "array": {
+      return { kind: "array", element: substituteType(t.element, bindings) };
+    }
+    case "channel": {
+      return { kind: "channel", element: substituteType(t.element, bindings) };
+    }
+    case "option": {
+      return { kind: "option", element: substituteType(t.element, bindings) };
+    }
+    case "result": {
+      return { kind: "result", ok: substituteType(t.ok, bindings), err: substituteType(t.err, bindings) };
+    }
+    case "promise": {
+      return { kind: "promise", element: substituteType(t.element, bindings) };
+    }
+    case "struct": {
+      const fields = new Map<string, Type>();
+      for (const [k, v] of t.fields) {
+        fields.set(k, substituteType(v, bindings));
+      }
+      return { kind: "struct", fields };
+    }
+    case "fn": {
+      return {
+        kind: "fn",
+        params: t.params.map(p => substituteType(p, bindings)),
+        returnType: substituteType(t.returnType, bindings),
+      };
+    }
+    case "generic_ref": {
+      const typeArgs = t.typeArgs.map(ta => substituteType(ta, bindings));
+      return { kind: "generic_ref", name: t.name, typeArgs };
+    }
+    case "trait":
+      return t; // Trait types don't have substitutable parts yet
+    default:
+      return t;
   }
 }
 
@@ -204,6 +281,7 @@ function annotationToType(
     case "channel": return { kind: "channel", element: annotationToType(a.element, structDefs, typeEnv) };
     case "option": return { kind: "option", element: annotationToType(a.element, structDefs, typeEnv) };
     case "result": return { kind: "result", ok: annotationToType(a.ok, structDefs, typeEnv), err: annotationToType(a.err, structDefs, typeEnv) };
+    case "promise": return { kind: "promise", element: annotationToType(a.element, structDefs, typeEnv) };
     case "struct_ref": {
       const structType = structDefs.get(a.name);
       return structType || { kind: "unknown" };
@@ -221,6 +299,10 @@ function annotationToType(
       const typeArgs = a.typeArgs.map(arg => annotationToType(arg, structDefs, typeEnv));
       return { kind: "generic_ref", name: a.name, typeArgs };
     }
+    case "trait_ref":
+      return { kind: "unknown" }; // Trait reference not yet fully supported
+    case "self_type":
+      return { kind: "unknown" }; // Self type not yet fully supported
   }
 }
 
@@ -232,6 +314,12 @@ export class TypeChecker {
   private errors: CheckError[] = [];
   private functions: Map<string, FnInfo> = new Map();
   private structs: Map<string, Type> = new Map(); // struct 정의 저장소
+  private traits: Map<string, Type> = new Map(); // trait 정의 저장소 (trait_decl)
+  private impls: Array<{ trait: string | null; forType: string; methods: Map<string, { params: Type[]; returnType: Type }> }> = []; // impl 정의 저장소
+  private genericFunctions: Map<string, GenericFnDef> = new Map();
+  private genericStructs: Map<string, GenericStructDef> = new Map();
+  private instantiatedFunctions: Map<string, FnInfo> = new Map(); // 인스턴스화된 함수
+  private instantiatedStructs: Map<string, Type> = new Map(); // 인스턴스화된 구조체
   private scope: Scope;
   private currentReturnType: Type | null = null;
 
@@ -240,21 +328,31 @@ export class TypeChecker {
   }
 
   check(program: Program): CheckError[] {
-    // Pass 1: struct 정의 등록
+    // Pass 1: trait과 struct 정의 등록
     for (const stmt of program.stmts) {
       if (stmt.kind === "struct_decl") {
         this.registerStruct(stmt);
       }
+      if (stmt.kind === "trait_decl") {
+        this.registerTrait(stmt);
+      }
     }
 
-    // Pass 2: 함수 전방참조 등록 (SPEC_08 Q5)
+    // Pass 2: impl 정의 등록
+    for (const stmt of program.stmts) {
+      if (stmt.kind === "impl_decl") {
+        this.registerImpl(stmt);
+      }
+    }
+
+    // Pass 3: 함수 전방참조 등록 (SPEC_08 Q5)
     for (const stmt of program.stmts) {
       if (stmt.kind === "fn_decl") {
         this.registerFunction(stmt);
       }
     }
 
-    // Pass 3: 본문 검사
+    // Pass 4: 본문 검사
     for (const stmt of program.stmts) {
       this.checkStmt(stmt);
     }
@@ -267,14 +365,24 @@ export class TypeChecker {
       name: p.name,
       type: annotationToType(p.type, this.structs),
     }));
-    const returnType = annotationToType(stmt.returnType, this.structs);
+    let returnType = annotationToType(stmt.returnType, this.structs);
+
+    // async fn인 경우 반환 타입을 Promise<T>로 자동 변환
+    if (stmt.isAsync) {
+      returnType = { kind: "promise", element: returnType };
+    }
 
     if (this.functions.has(stmt.name)) {
       this.error(`function '${stmt.name}' already declared`, stmt.line, stmt.col);
       return;
     }
 
-    this.functions.set(stmt.name, { params, returnType });
+    // Generic 함수인 경우 genericFunctions에 등록
+    if (stmt.typeParams.length > 0) {
+      this.genericFunctions.set(stmt.name, { typeParams: stmt.typeParams, params, returnType });
+    } else {
+      this.functions.set(stmt.name, { params, returnType });
+    }
   }
 
   private registerStruct(stmt: Stmt & { kind: "struct_decl" }): void {
@@ -289,7 +397,56 @@ export class TypeChecker {
       return;
     }
 
-    this.structs.set(stmt.name, { kind: "struct", fields });
+    // Generic 구조체인 경우 genericStructs에 등록
+    if (stmt.typeParams.length > 0) {
+      this.genericStructs.set(stmt.name, { typeParams: stmt.typeParams, fields });
+    } else {
+      this.structs.set(stmt.name, { kind: "struct", fields });
+    }
+  }
+
+  private registerTrait(stmt: Stmt & { kind: "trait_decl" }): void {
+    const methods = new Map<string, { params: Type[]; returnType: Type }>();
+
+    for (const method of stmt.methods) {
+      const params = method.params.map(p => annotationToType(p.type, this.structs));
+      const returnType = annotationToType(method.returnType, this.structs);
+      methods.set(method.name, { params, returnType });
+    }
+
+    if (this.traits.has(stmt.name)) {
+      this.error(`trait '${stmt.name}' already declared`, stmt.line, stmt.col);
+      return;
+    }
+
+    this.traits.set(stmt.name, {
+      kind: "trait",
+      name: stmt.name,
+      methods,
+    });
+  }
+
+  private registerImpl(stmt: Stmt & { kind: "impl_decl" }): void {
+    // forType을 문자열로 간단히 저장 (간소화)
+    let forTypeName = "unknown";
+    if (stmt.forType.kind === "struct_ref") {
+      forTypeName = stmt.forType.name;
+    }
+
+    const methods = new Map<string, { params: Type[]; returnType: Type }>();
+
+    for (const method of stmt.methods) {
+      const params = method.params.map(p => annotationToType(p.type, this.structs));
+      const returnType = annotationToType(method.returnType, this.structs);
+      methods.set(method.name, { params, returnType });
+    }
+
+    // impl 저장
+    this.impls.push({
+      trait: stmt.trait,
+      forType: forTypeName,
+      methods,
+    });
   }
 
   // ============================================================
@@ -304,6 +461,10 @@ export class TypeChecker {
         return this.checkFnDecl(stmt);
       case "struct_decl":
         return; // struct는 Pass 1에서 이미 등록됨
+      case "trait_decl":
+        return; // trait은 Pass 1에서 이미 등록됨
+      case "impl_decl":
+        return; // impl은 Pass 2에서 이미 등록됨
       case "if_stmt":
         return this.checkIfStmt(stmt);
       case "match_stmt":
@@ -324,6 +485,10 @@ export class TypeChecker {
         return this.checkReturnStmt(stmt);
       case "expr_stmt":
         return this.checkExprStmt(stmt);
+      case "import_decl":
+        return this.checkImportDecl(stmt as ImportDecl);
+      case "export_decl":
+        return this.checkExportDecl(stmt as ExportDecl);
     }
   }
 
@@ -431,6 +596,15 @@ export class TypeChecker {
     this.scope = new Scope(prevScope);
 
     this.checkPattern(arm.pattern, subjectType);
+
+    // Guard 절 검증: bool 타입이어야 함
+    if (arm.guard) {
+      const guardType = this.checkExpr(arm.guard);
+      if (guardType.kind !== "bool" && guardType.kind !== "unknown") {
+        this.error(`guard condition must be bool, got ${typeToString(guardType)}`, 0, 0);
+      }
+    }
+
     this.checkExpr(arm.body);
 
     this.scope = prevScope;
@@ -478,6 +652,53 @@ export class TypeChecker {
       case "literal":
         // 리터럴 타입은 checkExpr에서 확인
         this.checkExpr(pattern.value);
+        break;
+
+      case "struct":
+        // 구조체 분해 패턴: Point { x, y }
+        if (expectedType.kind !== "struct" && expectedType.kind !== "unknown") {
+          this.error(
+            `struct pattern on non-struct type ${typeToString(expectedType)}`,
+            0,
+            0
+          );
+        }
+
+        if (expectedType.kind === "struct") {
+          for (const field of pattern.fields) {
+            const fieldType = expectedType.fields.get(field.name);
+            if (!fieldType) {
+              this.error(`struct ${pattern.name} has no field ${field.name}`, 0, 0);
+            } else {
+              this.checkPattern(field.pattern, fieldType);
+            }
+          }
+        }
+        break;
+
+      case "array":
+        // 배열 분해 패턴: [a, b, c], [x, .., y]
+        if (expectedType.kind !== "array" && expectedType.kind !== "unknown") {
+          this.error(
+            `array pattern on non-array type ${typeToString(expectedType)}`,
+            0,
+            0
+          );
+        }
+
+        if (expectedType.kind === "array") {
+          const elementType = expectedType.element;
+          for (const element of pattern.elements) {
+            this.checkPattern(element, elementType);
+          }
+        }
+        break;
+
+      case "tuple":
+        // 튜플 분해 패턴: (a, b, c)
+        if (expectedType.kind !== "unknown") {
+          this.error(`tuple patterns not yet supported`, 0, 0);
+        }
         break;
     }
   }
@@ -568,11 +789,10 @@ export class TypeChecker {
   }
 
   private checkSpawnStmt(stmt: Stmt & { kind: "spawn_stmt" }): void {
-    // spawn은 독립 스코프 (SPEC_08 Q7)
+    // spawn은 새로운 스코프 (외부 변수 접근 가능)
     const prevScope = this.scope;
-    this.scope = new Scope(null); // 부모 스코프 없음 — 독립
+    this.scope = new Scope(prevScope); // 부모 스코프 유지
 
-    // 내장 함수는 접근 가능하도록 함수 테이블은 유지
     for (const s of stmt.body) this.checkStmt(s);
     this.scope = prevScope;
   }
@@ -606,6 +826,31 @@ export class TypeChecker {
     this.checkExpr(stmt.expr);
   }
 
+  private checkImportDecl(decl: ImportDecl): void {
+    // 기본 import 검증: 현재는 모듈 로드 없이 항목만 추적
+    for (const item of decl.items) {
+      const name = item.alias || item.name;
+      // import된 항목을 스코프에 등록 (타입은 unknown)
+      this.scope.define(name, {
+        type: { kind: "unknown" },
+        mutable: false,
+        moved: false,
+        line: decl.line,
+        col: decl.col,
+      });
+    }
+  }
+
+  private checkExportDecl(decl: ExportDecl): void {
+    // 기본 export 검증: 현재는 항목 추적만 수행
+    if (typeof decl.target !== "string") {
+      // export fn/struct: 이미 checkStmt에서 처리됨
+      return;
+    }
+    // export { ... }의 경우 항목 이름들이 실제로 정의되어 있는지는
+    // 향후 더 정교한 검증이 필요
+  }
+
   // ============================================================
   // 식 검사 — 타입 반환
   // ============================================================
@@ -625,6 +870,9 @@ export class TypeChecker {
 
       case "unary":
         return this.checkUnary(expr);
+
+      case "await":
+        return this.checkAwait(expr);
 
       case "call":
         return this.checkCall(expr);
@@ -658,6 +906,15 @@ export class TypeChecker {
 
       case "block_expr":
         return this.checkBlockExpr(expr);
+
+      case "chan_new":
+        return this.checkChanNew(expr);
+
+      case "chan_send":
+        return this.checkChanSend(expr);
+
+      case "chan_recv":
+        return this.checkChanRecv(expr);
 
       default:
         return { kind: "unknown" };
@@ -762,6 +1019,26 @@ export class TypeChecker {
         this.error(`unary '!' requires bool, got ${typeToString(operand)}`, expr.line, expr.col);
       }
       return { kind: "bool" };
+    }
+
+    return { kind: "unknown" };
+  }
+
+  private checkAwait(expr: Expr & { kind: "await" }): Type {
+    const operandType = this.checkExpr(expr.expr);
+
+    // await는 Promise 타입에만 사용 가능
+    if (operandType.kind !== "promise" && operandType.kind !== "unknown") {
+      this.error(
+        `await requires Promise type, got ${typeToString(operandType)}`,
+        expr.line, expr.col,
+      );
+      return { kind: "unknown" };
+    }
+
+    // Promise<T>이면 T를 반환
+    if (operandType.kind === "promise") {
+      return operandType.element;
     }
 
     return { kind: "unknown" };
@@ -876,12 +1153,24 @@ export class TypeChecker {
     const objType = this.checkExpr(expr.object);
 
     if (objType.kind === "struct") {
+      // 필드 접근
       const fieldType = objType.fields.get(expr.field);
-      if (!fieldType) {
-        this.error(`struct has no field '${expr.field}'`, expr.line, expr.col);
-        return { kind: "unknown" };
+      if (fieldType) {
+        return fieldType;
       }
-      return fieldType;
+
+      // 메서드 호출인지 확인
+      const structName = this.findStructName(objType);
+      if (structName) {
+        const impl = this.findImplMethod(structName, expr.field);
+        if (impl) {
+          // 메서드를 함수 타입으로 반환
+          return { kind: "fn", params: impl.params, returnType: impl.returnType };
+        }
+      }
+
+      this.error(`struct has no field or method '${expr.field}'`, expr.line, expr.col);
+      return { kind: "unknown" };
     }
 
     // 메서드 스타일 호출 (ch.recv 등) — unknown 반환
@@ -893,6 +1182,29 @@ export class TypeChecker {
     }
 
     return { kind: "unknown" };
+  }
+
+  private findStructName(objType: Type): string | null {
+    // 구조체 이름 찾기 (간소화)
+    for (const [name, sType] of this.structs) {
+      if (typesEqual(sType, objType)) {
+        return name;
+      }
+    }
+    return null;
+  }
+
+  private findImplMethod(structName: string, methodName: string): { params: Type[]; returnType: Type } | null {
+    // impl에서 메서드 찾기
+    for (const impl of this.impls) {
+      if (impl.forType === structName) {
+        const method = impl.methods.get(methodName);
+        if (method) {
+          return method;
+        }
+      }
+    }
+    return null;
   }
 
   private checkAssign(expr: Expr & { kind: "assign" }): Type {
@@ -1244,10 +1556,188 @@ export class TypeChecker {
   }
 
   // ============================================================
+  // 채널/Actor 관련 검사
+  // ============================================================
+
+  private checkChanNew(expr: Expr & { kind: "chan_new" }): Type {
+    const elementType = annotationToType(expr.element, this.structs);
+    return { kind: "channel", element: elementType };
+  }
+
+  private checkChanSend(expr: Expr & { kind: "chan_send" }): Type {
+    const chanType = this.checkExpr(expr.chan);
+    const valueType = this.checkExpr(expr.value);
+
+    if (chanType.kind !== "channel" && chanType.kind !== "unknown") {
+      this.error(
+        `cannot send on non-channel type ${typeToString(chanType)}`,
+        expr.line, expr.col,
+      );
+      return { kind: "void" };
+    }
+
+    if (chanType.kind === "channel") {
+      if (!typesEqual(chanType.element, valueType) && valueType.kind !== "unknown") {
+        this.error(
+          `channel element type mismatch: expected ${typeToString(chanType.element)}, got ${typeToString(valueType)}`,
+          expr.line, expr.col,
+        );
+      }
+    }
+
+    return { kind: "void" };
+  }
+
+  private checkChanRecv(expr: Expr & { kind: "chan_recv" }): Type {
+    const chanType = this.checkExpr(expr.chan);
+
+    if (chanType.kind !== "channel" && chanType.kind !== "unknown") {
+      this.error(
+        `cannot receive on non-channel type ${typeToString(chanType)}`,
+        expr.line, expr.col,
+      );
+      return { kind: "unknown" };
+    }
+
+    if (chanType.kind === "channel") {
+      return chanType.element;
+    }
+
+    return { kind: "unknown" };
+  }
+
+  // ============================================================
   // 에러 헬퍼
   // ============================================================
 
   private error(message: string, line: number, col: number): void {
     this.errors.push({ message, line, col });
+  }
+
+  // ============================================================
+  // 제네릭 관련 public 메서드
+  // ============================================================
+
+  getInstantiatedFunctions(): Map<string, FnInfo> {
+    return this.instantiatedFunctions;
+  }
+
+  getInstantiatedStructs(): Map<string, Type> {
+    return this.instantiatedStructs;
+  }
+
+  getGenericFunctions(): Map<string, GenericFnDef> {
+    return this.genericFunctions;
+  }
+
+  getGenericStructs(): Map<string, GenericStructDef> {
+    return this.genericStructs;
+  }
+
+  getStructs(): Map<string, Type> {
+    return this.structs;
+  }
+
+  // ============================================================
+  // Name mangling for generic instantiations
+  // ============================================================
+
+  private typeToMangledName(t: Type): string {
+    switch (t.kind) {
+      case "i32": return "i32";
+      case "i64": return "i64";
+      case "f64": return "f64";
+      case "bool": return "bool";
+      case "string": return "str";
+      case "void": return "void";
+      case "array":
+        return `arr_${this.typeToMangledName(t.element)}`;
+      case "channel":
+        return `chan_${this.typeToMangledName(t.element)}`;
+      case "option":
+        return `opt_${this.typeToMangledName(t.element)}`;
+      case "result":
+        return `res_${this.typeToMangledName(t.ok)}_${this.typeToMangledName(t.err)}`;
+      case "struct":
+        return `struct_${[...t.fields.keys()].join("_")}`;
+      case "fn": {
+        const paramNames = t.params.map(p => this.typeToMangledName(p)).join("_");
+        const retName = this.typeToMangledName(t.returnType);
+        return `fn_${paramNames}_${retName}`;
+      }
+      case "type_param":
+        return t.name;
+      case "generic_ref":
+        return `gen_${t.name}`;
+      default:
+        return "unknown";
+    }
+  }
+
+  private mangleFunctionName(baseName: string, fnType: FnInfo): string {
+    const argNames = fnType.params
+      .map(p => this.typeToMangledName(p.type))
+      .join("_");
+    const retName = this.typeToMangledName(fnType.returnType);
+    if (argNames) {
+      return `${baseName}_${argNames}_${retName}`;
+    } else {
+      return `${baseName}_${retName}`;
+    }
+  }
+
+  // ============================================================
+  // 제네릭 함수 인스턴시화
+  // ============================================================
+
+  instantiateFunction(name: string, typeArgs: Type[]): FnInfo | null {
+    const genericFn = this.genericFunctions.get(name);
+    if (!genericFn) return null;
+
+    if (typeArgs.length !== genericFn.typeParams.length) {
+      return null;
+    }
+
+    // 타입 바인딩 생성
+    const bindings = new Map<string, Type>();
+    for (let i = 0; i < genericFn.typeParams.length; i++) {
+      bindings.set(genericFn.typeParams[i], typeArgs[i]);
+    }
+
+    // 파라미터와 반환 타입 치환
+    const params = genericFn.params.map(p => ({
+      name: p.name,
+      type: substituteType(p.type, bindings),
+    }));
+    const returnType = substituteType(genericFn.returnType, bindings);
+
+    return { params, returnType };
+  }
+
+  // ============================================================
+  // 제네릭 구조체 인스턴시화
+  // ============================================================
+
+  instantiateStruct(name: string, typeArgs: Type[]): Type {
+    const genericStruct = this.genericStructs.get(name);
+    if (!genericStruct) return { kind: "unknown" };
+
+    if (typeArgs.length !== genericStruct.typeParams.length) {
+      return { kind: "unknown" };
+    }
+
+    // 타입 바인딩 생성
+    const bindings = new Map<string, Type>();
+    for (let i = 0; i < genericStruct.typeParams.length; i++) {
+      bindings.set(genericStruct.typeParams[i], typeArgs[i]);
+    }
+
+    // 필드 타입 치환
+    const fields = new Map<string, Type>();
+    for (const [fieldName, fieldType] of genericStruct.fields) {
+      fields.set(fieldName, substituteType(fieldType, bindings));
+    }
+
+    return { kind: "struct", fields };
   }
 }

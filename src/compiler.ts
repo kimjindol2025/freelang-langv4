@@ -1,7 +1,7 @@
 // FreeLang v4 — Bytecode Compiler (SPEC_02 구현)
 // AST → Bytecode
 
-import { Program, Stmt, Expr, Pattern, MatchArm, Param, TypeAnnotation } from "./ast";
+import { Program, Stmt, Expr, Pattern, MatchArm, Param, TypeAnnotation, ImportDecl, ExportDecl } from "./ast";
 import { IrValue, IrInst, IrFunction, IrProgram } from "./ir";
 
 // ============================================================
@@ -692,6 +692,8 @@ export class Compiler {
       case "spawn_stmt": return this.compileSpawnStmt(stmt);
       case "return_stmt": return this.compileReturnStmt(stmt);
       case "expr_stmt": return this.compileExprStmt(stmt);
+      case "import_decl": return; // 모듈 로드는 별도 처리
+      case "export_decl": return; // export는 컴파일 시점에 무시
     }
   }
 
@@ -783,6 +785,15 @@ export class Compiler {
       const nextArm = this.chunk.currentOffset();
       this.chunk.emitI32(0, stmt.line);
 
+      // Guard 절이 있으면 추가 조건 검사
+      let guardJump: number | null = null;
+      if (arm.guard) {
+        this.compileExpr(arm.guard);
+        this.chunk.emit(Op.JUMP_IF_FALSE, stmt.line);
+        guardJump = this.chunk.currentOffset();
+        this.chunk.emitI32(0, stmt.line);
+      }
+
       // body (subject POP 후)
       this.chunk.emit(Op.POP, stmt.line); // subject 제거
       this.beginScope();
@@ -795,6 +806,11 @@ export class Compiler {
       this.chunk.emit(Op.JUMP, stmt.line);
       endJumps.push(this.chunk.currentOffset());
       this.chunk.emitI32(0, stmt.line);
+
+      // Guard 실패 시 처리 (패치)
+      if (guardJump !== null) {
+        this.chunk.patchI32(guardJump, this.chunk.currentOffset());
+      }
 
       // 다음 arm (패치)
       this.chunk.patchI32(nextArm, this.chunk.currentOffset());
@@ -1111,6 +1127,11 @@ export class Compiler {
         this.compileUnary(expr);
         break;
 
+      case "await":
+        // 단순화: await는 일단 식의 값을 그대로 반환
+        this.compileExpr(expr.expr);
+        break;
+
       case "call":
         this.compileCall(expr);
         break;
@@ -1166,6 +1187,21 @@ export class Compiler {
         if (expr.expr) this.compileExpr(expr.expr);
         else this.chunk.emit(Op.PUSH_VOID, expr.line);
         this.endScope(expr.line);
+        break;
+
+      case "chan_new":
+        this.chunk.emit(Op.CHAN_NEW, expr.line);
+        break;
+
+      case "chan_send":
+        this.compileExpr(expr.chan);
+        this.compileExpr(expr.value);
+        this.chunk.emit(Op.CHAN_SEND, expr.line);
+        break;
+
+      case "chan_recv":
+        this.compileExpr(expr.chan);
+        this.chunk.emit(Op.CHAN_RECV, expr.line);
         break;
     }
   }
@@ -1336,12 +1372,26 @@ export class Compiler {
       const nextArm = this.chunk.currentOffset();
       this.chunk.emitI32(0, expr.line);
 
+      // Guard 절이 있으면 추가 조건 검사
+      let guardJump: number | null = null;
+      if (arm.guard) {
+        this.compileExpr(arm.guard);
+        this.chunk.emit(Op.JUMP_IF_FALSE, expr.line);
+        guardJump = this.chunk.currentOffset();
+        this.chunk.emitI32(0, expr.line);
+      }
+
       this.chunk.emit(Op.POP, expr.line); // subject 제거
       this.compileExpr(arm.body);
 
       this.chunk.emit(Op.JUMP, expr.line);
       endJumps.push(this.chunk.currentOffset());
       this.chunk.emitI32(0, expr.line);
+
+      // Guard 실패 시 처리 (패치)
+      if (guardJump !== null) {
+        this.chunk.patchI32(guardJump, this.chunk.currentOffset());
+      }
 
       this.chunk.patchI32(nextArm, this.chunk.currentOffset());
     }
@@ -1381,6 +1431,21 @@ export class Compiler {
         break;
       case "err":
         this.chunk.emit(Op.IS_ERR, line);
+        break;
+      case "struct":
+        // 구조체 분해: 이름으로 타입 확인
+        this.chunk.emit(Op.POP, line); // 일단 subject 제거
+        this.chunk.emit(Op.PUSH_TRUE, line);
+        break;
+      case "array":
+        // 배열 분해: 배열 타입 확인
+        this.chunk.emit(Op.POP, line); // 일단 subject 제거
+        this.chunk.emit(Op.PUSH_TRUE, line);
+        break;
+      case "tuple":
+        // 튜플은 아직 미지원
+        this.chunk.emit(Op.POP, line);
+        this.chunk.emit(Op.PUSH_FALSE, line);
         break;
     }
   }

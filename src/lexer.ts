@@ -6,12 +6,16 @@
 // ============================================================
 
 export enum TokenType {
-  // 키워드 (18)
+  // 키워드 (23)
   VAR = "VAR",
   LET = "LET",
   CONST = "CONST",
   FN = "FN",
+  ASYNC = "ASYNC",
+  AWAIT = "AWAIT",
   STRUCT = "STRUCT",
+  TRAIT = "TRAIT",
+  IMPL = "IMPL",
   IF = "IF",
   ELSE = "ELSE",
   MATCH = "MATCH",
@@ -25,6 +29,10 @@ export enum TokenType {
   SPAWN = "SPAWN",
   TRUE = "TRUE",
   FALSE = "FALSE",
+  AS = "AS",
+  IMPORT = "IMPORT",
+  EXPORT = "EXPORT",
+  FROM = "FROM",
 
   // 타입 이름 (7)
   TYPE_I32 = "TYPE_I32",
@@ -40,7 +48,7 @@ export enum TokenType {
   FLOAT_LIT = "FLOAT_LIT",
   STRING_LIT = "STRING_LIT",
 
-  // 연산자/구두점 (26)
+  // 연산자/구두점 (27)
   PLUS = "PLUS",           // +
   MINUS = "MINUS",         // -
   STAR = "STAR",           // *
@@ -59,9 +67,11 @@ export enum TokenType {
   QUESTION = "QUESTION",   // ?
   ARROW = "ARROW",         // =>
   RARROW = "RARROW",       // ->
+  LARROW = "LARROW",       // <-
   COLON = "COLON",         // :
   COMMA = "COMMA",         // ,
   DOT = "DOT",             // .
+  DOTDOT = "DOTDOT",       // ..
   LPAREN = "LPAREN",       // (
   RPAREN = "RPAREN",       // )
   LBRACKET = "LBRACKET",   // [
@@ -101,12 +111,16 @@ export type LexError = {
 // ============================================================
 
 const KEYWORDS: Map<string, TokenType> = new Map([
-  // 키워드 (14)
+  // 키워드 (23)
   ["var", TokenType.VAR],
   ["let", TokenType.LET],
   ["const", TokenType.CONST],
   ["fn", TokenType.FN],
+  ["async", TokenType.ASYNC],
+  ["await", TokenType.AWAIT],
   ["struct", TokenType.STRUCT],
+  ["trait", TokenType.TRAIT],
+  ["impl", TokenType.IMPL],
   ["if", TokenType.IF],
   ["else", TokenType.ELSE],
   ["match", TokenType.MATCH],
@@ -120,6 +134,11 @@ const KEYWORDS: Map<string, TokenType> = new Map([
   ["spawn", TokenType.SPAWN],
   ["true", TokenType.TRUE],
   ["false", TokenType.FALSE],
+  ["as", TokenType.AS],
+  // 모듈 시스템 키워드 (3)
+  ["import", TokenType.IMPORT],
+  ["export", TokenType.EXPORT],
+  ["from", TokenType.FROM],
   // 논리 연산자 키워드 (2) — && || 대신 사용 가능
   ["and", TokenType.AND],
   ["or", TokenType.OR],
@@ -246,6 +265,11 @@ export class Lexer {
       this.tokens.push({ type: TokenType.LTEQ, lexeme: "<=", line: startLine, col: startCol });
       return;
     }
+    if (ch === "<" && this.peekNext() === "-") {
+      this.advance(); this.advance();
+      this.tokens.push({ type: TokenType.LARROW, lexeme: "<-", line: startLine, col: startCol });
+      return;
+    }
     if (ch === ">" && this.peekNext() === "=") {
       this.advance(); this.advance();
       this.tokens.push({ type: TokenType.GTEQ, lexeme: ">=", line: startLine, col: startCol });
@@ -259,6 +283,11 @@ export class Lexer {
     if (ch === "|" && this.peekNext() === "|") {
       this.advance(); this.advance();
       this.tokens.push({ type: TokenType.OR, lexeme: "||", line: startLine, col: startCol });
+      return;
+    }
+    if (ch === "." && this.peekNext() === ".") {
+      this.advance(); this.advance();
+      this.tokens.push({ type: TokenType.DOTDOT, lexeme: "..", line: startLine, col: startCol });
       return;
     }
 
