@@ -343,11 +343,18 @@ println(encoded)`, ["aGVsbG8="], "base64 encode");
 expectOutput(`var result = base64_decode("aGVsbG8=")
 println(typeof(result))`, ["ok"], "base64 decode ok");
 
-// JSON (4)
+// JSON (5)
 expectOutput(`var result = json_parse("{\\\"x\\\":1}")
 println(typeof(result))`, ["ok"], "json_parse ok");
 expectOutput(`println(json_validate("{\\\"x\\\":1}"))`, ["true"], "json_validate true");
 expectOutput(`println(json_validate("{invalid"))`, ["false"], "json_validate false");
+expectOutput(`var obj = clone([1, 2, 3])
+var json = json_stringify(obj)
+println(json)`, ["[1,2,3]"], "json_stringify array");
+expectOutput(`struct Point { x: i32, y: i32 }
+var p = Point { x: 10, y: 20 }
+var json = json_stringify(p)
+println(contains(json, "x"))`, ["true"], "json_stringify struct contains x");
 
 // Advanced Strings (3)
 expectOutput(`println(starts_with("hello", "he"))`, ["true"], "starts_with true");
