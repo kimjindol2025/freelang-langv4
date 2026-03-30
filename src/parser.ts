@@ -210,6 +210,7 @@ export class Parser {
     const fields: StructField[] = [];
     if (!this.check(TokenType.RBRACE)) {
       do {
+        if (this.check(TokenType.RBRACE)) break; // Allow trailing comma
         const fieldName = this.expectIdent("field name");
         this.expect(TokenType.COLON, "expected ':' after field name");
         const fieldType = this.parseType();

@@ -1,0 +1,16 @@
+var content = "Hello I2I"
+write_file("test_output.txt", content)
+var read = read_file("test_output.txt")
+println("Write+Read: " + read)
+
+// split 테스트
+var input = "Rust로 API 서버 구축, 포트 8080, PostgreSQL 연결"
+var tokens = split(input, ",")
+println("토큰 수: " + str(length(tokens)))
+for t in tokens {
+  println("  → " + trim(t))
+}
+
+// contains 테스트
+println("rust 포함: " + str(contains(to_lower(input), "rust")))
+println("port 8080 감지: " + str(contains(input, "8080")))

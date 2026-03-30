@@ -1,0 +1,12 @@
+// 실제 타입 변환 확인
+write_file("test_out.txt", "Hello I2I")
+
+match read_file("test_out.txt") {
+  Ok(content) => println("읽기 성공: " + content)
+  Err(e) => println("읽기 실패: " + e)
+}
+
+// 숫자 변환 방법 탐색
+var s = "8080"
+var n = int(s)
+println(str(n))

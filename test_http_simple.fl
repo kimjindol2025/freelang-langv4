@@ -1,0 +1,10 @@
+// Simple HTTP GET test
+var result = http_get("https://httpbin.org/status/200")
+
+if is_ok(result) {
+  println("✓ HTTP GET 성공!")
+  var body = result
+  println(typeof(body))
+} else {
+  println("❌ HTTP GET 실패")
+}

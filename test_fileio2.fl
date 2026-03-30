@@ -1,0 +1,24 @@
+// read_file은 Result<string, string>
+write_file("test_out.txt", "Hello I2I")
+
+match read_file("test_out.txt") {
+  Ok(content) => println("읽기 성공: " + content)
+  Err(e) => println("읽기 실패: " + e)
+}
+
+// 없는 파일
+match read_file("nonexistent.txt") {
+  Ok(c) => println("내용: " + c)
+  Err(e) => println("예상된 오류: " + e)
+}
+
+// i32 변환도 Result 반환
+match i32("8080") {
+  Ok(n) => println("포트: " + str(n))
+  Err(e) => println("변환 실패: " + e)
+}
+
+match i32("abc") {
+  Ok(n) => println("숫자: " + str(n))
+  Err(e) => println("예상된 오류: " + e)
+}

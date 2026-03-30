@@ -1484,6 +1484,10 @@ export class TypeChecker {
       "gcd", "lcm",
       "uuid", "timestamp",
       "send", "recv",
+      // Environment (1)
+      "env",
+      // Phase 2: HTTP Client
+      "http_get", "http_post", "http_post_json", "fetch",
     ].includes(name);
   }
 
@@ -1550,6 +1554,13 @@ export class TypeChecker {
       // Utils (Phase 7)
       case "uuid": return { kind: "string" };
       case "timestamp": return { kind: "f64" };
+
+      // Environment
+      case "env": return { kind: "string" };
+
+      // HTTP Client (Phase 2)
+      case "http_get": case "http_post": case "http_post_json": case "fetch":
+        return { kind: "result", ok: { kind: "string" }, err: { kind: "string" } };
 
       default: return null;
     }

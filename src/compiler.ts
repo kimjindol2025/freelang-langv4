@@ -1127,10 +1127,20 @@ export class Compiler {
         this.compileUnary(expr);
         break;
 
-      case "await":
-        // 단순화: await는 일단 식의 값을 그대로 반환
+      case "await": {
+        // Promise 객체를 스택에 push
         this.compileExpr(expr.expr);
+
+        // Promise._value 필드 추출
+        this.chunk.emit(Op.STRUCT_GET, expr.line);
+        this.chunk.emitI32(
+          this.chunk.addConstant("_value"),
+          expr.line
+        );
+
+        // 이제 스택에 추출된 값이 있음
         break;
+      }
 
       case "call":
         this.compileCall(expr);
@@ -1280,6 +1290,10 @@ export class Compiler {
         "uuid", "timestamp",
         // Channel (2)
         "send", "recv",
+        // Environment (1)
+        "env",
+        // HTTP Client (4) - Phase 2
+        "http_get", "http_post", "http_post_json", "fetch",
       ];
 
       if (builtins.includes(name)) {
@@ -1382,7 +1396,7 @@ export class Compiler {
       }
 
       this.chunk.emit(Op.POP, expr.line); // subject 제거
-      this.compileExpr(arm.body);
+      this.compileExpr(arm.body); // arm body의 값이 스택에 남음
 
       this.chunk.emit(Op.JUMP, expr.line);
       endJumps.push(this.chunk.currentOffset());
@@ -1396,11 +1410,15 @@ export class Compiler {
       this.chunk.patchI32(nextArm, this.chunk.currentOffset());
     }
 
-    this.chunk.emit(Op.POP, expr.line); // fallthrough
+    // fallthrough (아무 arm도 매칭 안 됨) - subject 제거 후 void
+    this.chunk.emit(Op.POP, expr.line);
     this.chunk.emit(Op.PUSH_VOID, expr.line);
 
+    // arm이 성공했으면 여기(PUSH_VOID 이후)로 점프
+    const afterMatchLabel = this.chunk.currentOffset();
+
     for (const j of endJumps) {
-      this.chunk.patchI32(j, this.chunk.currentOffset());
+      this.chunk.patchI32(j, afterMatchLabel);
     }
   }
 

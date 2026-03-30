@@ -3,6 +3,7 @@
 
 import { Op, Chunk, FuncInfo } from "./compiler";
 import * as crypto from "crypto";
+import request from "sync-request";
 
 // ============================================================
 // Value (SPEC_02 Q3)
@@ -876,6 +877,58 @@ export class VM {
         return { tag: "f64", val: now };
       }
 
+      // Environment (1)
+      case "env": {
+        const key = this.valueToString(args[0]);
+        const value = process.env[key] ?? "";
+        return { tag: "str", val: value };
+      }
+
+      // HTTP Client (5) — Phase 2
+      case "http_get": {
+        const url = this.valueToString(args[0]);
+        try {
+          // Synchronous fetch simulation using blocking approach
+          // Note: fetch is async, but we return a promise and resolve it immediately
+          const result = this.httpGetSync(url);
+          return result;
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
+        }
+      }
+      case "http_post": {
+        const url = this.valueToString(args[0]);
+        const body = this.valueToString(args[1]);
+        try {
+          const result = this.httpPostSync(url, body);
+          return result;
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
+        }
+      }
+      case "http_post_json": {
+        const url = this.valueToString(args[0]);
+        const jsonBody = this.valueToString(args[1]);
+        try {
+          const result = this.httpPostJsonSync(url, jsonBody);
+          return result;
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
+        }
+      }
+      case "fetch": {
+        const url = this.valueToString(args[0]);
+        const method = args.length > 1 ? this.valueToString(args[1]) : "GET";
+        const headers = args.length > 2 ? args[2] : null;
+        const body = args.length > 3 ? this.valueToString(args[3]) : null;
+        try {
+          const result = this.fetchSync(url, method, headers, body);
+          return result;
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
+        }
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }
@@ -991,6 +1044,72 @@ export class VM {
         return null;
       default:
         return null;
+    }
+  }
+
+  // ============================================================
+  // HTTP Client Implementation (Phase 2) — sync-request based
+  // ============================================================
+
+  private httpGetSync(url: string): Value {
+    try {
+      const response = (request as any)("GET", url, { retry: 0, timeout: 5000 } as any);
+      const body = response.getBody("utf8");
+      return { tag: "ok", val: { tag: "str", val: body } };
+    } catch (e: any) {
+      return { tag: "err", val: { tag: "str", val: e.message } };
+    }
+  }
+
+  private httpPostSync(url: string, body: string): Value {
+    try {
+      const response = (request as any)("POST", url, {
+        body,
+        retry: 0,
+        timeout: 5000,
+      } as any);
+      const responseBody = response.getBody("utf8");
+      return { tag: "ok", val: { tag: "str", val: responseBody } };
+    } catch (e: any) {
+      return { tag: "err", val: { tag: "str", val: e.message } };
+    }
+  }
+
+  private httpPostJsonSync(url: string, jsonBody: string): Value {
+    try {
+      const response = (request as any)("POST", url, {
+        headers: { "Content-Type": "application/json" },
+        body: jsonBody,
+        retry: 0,
+        timeout: 5000,
+      } as any);
+      const responseBody = response.getBody("utf8");
+      return { tag: "ok", val: { tag: "str", val: responseBody } };
+    } catch (e: any) {
+      return { tag: "err", val: { tag: "str", val: e.message } };
+    }
+  }
+
+  private fetchSync(url: string, method: string, headers: Value | null, body: string | null): Value {
+    try {
+      const options: any = { retry: 0, timeout: 5000 };
+
+      if (headers && headers.tag === "struct") {
+        options.headers = {};
+        for (const [k, v] of headers.fields) {
+          options.headers[k] = this.valueToString(v);
+        }
+      }
+
+      if (body) {
+        options.body = body;
+      }
+
+      const response = (request as any)(method, url, options);
+      const responseBody = response.getBody("utf8");
+      return { tag: "ok", val: { tag: "str", val: responseBody } };
+    } catch (e: any) {
+      return { tag: "err", val: { tag: "str", val: e.message } };
     }
   }
 }

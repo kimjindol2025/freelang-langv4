@@ -1,0 +1,10 @@
+// Debug HTTP response
+var result = http_get("https://httpbin.org/uuid")
+println("Type: " + typeof(result))
+
+// JSON 파싱 테스트
+var json_str = json_stringify({name: "test", value: 42})
+println("JSON: " + json_str)
+
+var parsed = json_parse(json_str)
+println("Parsed: " + typeof(parsed))
