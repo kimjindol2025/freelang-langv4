@@ -328,6 +328,9 @@ export class TypeChecker {
   }
 
   check(program: Program): CheckError[] {
+    // Builtin 함수 등록
+    this.registerBuiltinFunctions();
+
     // Pass 1: trait과 struct 정의 등록
     for (const stmt of program.stmts) {
       if (stmt.kind === "struct_decl") {
@@ -383,6 +386,28 @@ export class TypeChecker {
     } else {
       this.functions.set(stmt.name, { params, returnType });
     }
+  }
+
+  private registerBuiltinFunctions(): void {
+    // Some<T>(value: T) -> Option<T>
+    // 실제로는 제네릭 함수이지만, 여기서는 unknown 파라미터로 처리
+    this.functions.set("Some", {
+      params: [{ name: "value", type: { kind: "unknown" } }],
+      returnType: { kind: "option", element: { kind: "unknown" } }
+    });
+
+    // None는 값이므로 함수로 등록하지 않음 (상수처럼 취급)
+    // Ok<T>(value: T) -> Result<T, E>
+    this.functions.set("Ok", {
+      params: [{ name: "value", type: { kind: "unknown" } }],
+      returnType: { kind: "result", ok: { kind: "unknown" }, err: { kind: "unknown" } }
+    });
+
+    // Err<E>(error: E) -> Result<T, E>
+    this.functions.set("Err", {
+      params: [{ name: "error", type: { kind: "unknown" } }],
+      returnType: { kind: "result", ok: { kind: "unknown" }, err: { kind: "unknown" } }
+    });
   }
 
   private registerStruct(stmt: Stmt & { kind: "struct_decl" }): void {

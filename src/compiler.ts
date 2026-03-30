@@ -722,13 +722,29 @@ export class Compiler {
       this.declareLocal(p.name);
     }
 
-    // 본문
-    for (const s of stmt.body) {
-      this.compileStmt(s);
+    // 본문: 마지막 statement가 expr_stmt/match_stmt이면 값을 반환
+    let lastStmtIsExpr = false;
+    for (let i = 0; i < stmt.body.length; i++) {
+      const s = stmt.body[i];
+      const isLast = i === stmt.body.length - 1;
+
+      if (isLast && s.kind === "expr_stmt") {
+        // 마지막이 expression statement → expression 값을 스택에 남김
+        this.compileExpr(s.expr);
+        lastStmtIsExpr = true;
+      } else if (isLast && s.kind === "match_stmt") {
+        // 마지막이 match statement → match 값을 반환하도록 컴파일
+        this.compileMatchStmtAsExpr(s as Stmt & { kind: "match_stmt" });
+        lastStmtIsExpr = true;
+      } else {
+        this.compileStmt(s);
+      }
     }
 
     // void 함수는 암시적 return
-    this.chunk.emit(Op.PUSH_VOID, stmt.line);
+    if (!lastStmtIsExpr) {
+      this.chunk.emit(Op.PUSH_VOID, stmt.line);
+    }
     this.chunk.emit(Op.RETURN, stmt.line);
 
     this.locals = prevLocals;
@@ -771,11 +787,18 @@ export class Compiler {
 
   private compileMatchStmt(stmt: Stmt & { kind: "match_stmt" }): void {
     this.compileExpr(stmt.subject);
+
+    // subject를 로컬 슬롯에 저장 (struct/array 분해 바인딩용)
+    const subjectSlot = this.declareLocal("__match_subject__");
+    this.chunk.emit(Op.STORE_LOCAL, stmt.line);
+    this.chunk.emitI32(subjectSlot, stmt.line);
+
     const endJumps: number[] = [];
 
     for (const arm of stmt.arms) {
-      // DUP subject
-      this.chunk.emit(Op.DUP, stmt.line);
+      // subject를 스택에 로드해서 테스트
+      this.chunk.emit(Op.LOAD_LOCAL, stmt.line);
+      this.chunk.emitI32(subjectSlot, stmt.line);
 
       // 패턴 매칭 코드
       this.compilePatternTest(arm.pattern, stmt.line);
@@ -785,7 +808,11 @@ export class Compiler {
       const nextArm = this.chunk.currentOffset();
       this.chunk.emitI32(0, stmt.line);
 
-      // Guard 절이 있으면 추가 조건 검사
+      // Pattern 매칭 성공 — scope 시작 및 변수 바인딩
+      this.beginScope();
+      this.compilePatternBind(arm.pattern, stmt.line, subjectSlot);
+
+      // Guard 절이 있으면 추가 조건 검사 (pattern bind 후)
       let guardJump: number | null = null;
       if (arm.guard) {
         this.compileExpr(arm.guard);
@@ -794,10 +821,7 @@ export class Compiler {
         this.chunk.emitI32(0, stmt.line);
       }
 
-      // body (subject POP 후)
-      this.chunk.emit(Op.POP, stmt.line); // subject 제거
-      this.beginScope();
-      this.compilePatternBind(arm.pattern, stmt.line);
+      // body
       this.compileExpr(arm.body);
       this.chunk.emit(Op.POP, stmt.line); // match stmt → 값 버림
       this.endScope(stmt.line);
@@ -807,21 +831,69 @@ export class Compiler {
       endJumps.push(this.chunk.currentOffset());
       this.chunk.emitI32(0, stmt.line);
 
-      // Guard 실패 시 처리 (패치)
+      // 다음 arm (패치) - pattern fail과 guard fail 모두 이 위치로
+      this.chunk.patchI32(nextArm, this.chunk.currentOffset());
       if (guardJump !== null) {
         this.chunk.patchI32(guardJump, this.chunk.currentOffset());
       }
-
-      // 다음 arm (패치)
-      this.chunk.patchI32(nextArm, this.chunk.currentOffset());
     }
-
-    // subject POP (매칭 안 된 경우)
-    this.chunk.emit(Op.POP, stmt.line);
 
     // end 패치
     for (const j of endJumps) {
       this.chunk.patchI32(j, this.chunk.currentOffset());
+    }
+  }
+
+  private compileMatchStmtAsExpr(stmt: Stmt & { kind: "match_stmt" }): void {
+    // match_stmt를 expression처럼 컴파일 (값을 반환)
+    this.compileExpr(stmt.subject);
+
+    const subjectSlot = this.declareLocal("__match_subject__");
+    this.chunk.emit(Op.STORE_LOCAL, stmt.line);
+    this.chunk.emitI32(subjectSlot, stmt.line);
+
+    const endJumps: number[] = [];
+
+    for (const arm of stmt.arms) {
+      this.chunk.emit(Op.LOAD_LOCAL, stmt.line);
+      this.chunk.emitI32(subjectSlot, stmt.line);
+      this.compilePatternTest(arm.pattern, stmt.line);
+      this.chunk.emit(Op.JUMP_IF_FALSE, stmt.line);
+      const nextArm = this.chunk.currentOffset();
+      this.chunk.emitI32(0, stmt.line);
+
+      // Pattern 매칭 성공 — scope 시작 및 변수 바인딩
+      this.beginScope();
+      this.compilePatternBind(arm.pattern, stmt.line, subjectSlot);
+
+      // Guard 절이 있으면 추가 조건 검사 (pattern bind 후)
+      let guardJump: number | null = null;
+      if (arm.guard) {
+        this.compileExpr(arm.guard);
+        this.chunk.emit(Op.JUMP_IF_FALSE, stmt.line);
+        guardJump = this.chunk.currentOffset();
+        this.chunk.emitI32(0, stmt.line);
+      }
+
+      // body 실행
+      this.compileExpr(arm.body);  // 값을 반환 (POP 없음)
+      this.endScope(stmt.line);
+
+      this.chunk.emit(Op.JUMP, stmt.line);
+      endJumps.push(this.chunk.currentOffset());
+      this.chunk.emitI32(0, stmt.line);
+
+      // 다음 arm (패치) - pattern fail과 guard fail 모두 이 위치로
+      this.chunk.patchI32(nextArm, this.chunk.currentOffset());
+      if (guardJump !== null) {
+        this.chunk.patchI32(guardJump, this.chunk.currentOffset());
+      }
+    }
+
+    this.chunk.emit(Op.PUSH_VOID, stmt.line);
+    const afterMatchLabel = this.chunk.currentOffset();
+    for (const j of endJumps) {
+      this.chunk.patchI32(j, afterMatchLabel);
     }
   }
 
@@ -1377,14 +1449,27 @@ export class Compiler {
 
   private compileMatchExpr(expr: Expr & { kind: "match_expr" }): void {
     this.compileExpr(expr.subject);
+
+    // subject를 로컬 슬롯에 저장 (struct/array 분해 바인딩용)
+    const subjectSlot = this.declareLocal("__match_subject__");
+    this.chunk.emit(Op.STORE_LOCAL, expr.line);
+    this.chunk.emitI32(subjectSlot, expr.line);
+
     const endJumps: number[] = [];
 
     for (const arm of expr.arms) {
-      this.chunk.emit(Op.DUP, expr.line);
+      // subject를 스택에 로드해서 테스트
+      this.chunk.emit(Op.LOAD_LOCAL, expr.line);
+      this.chunk.emitI32(subjectSlot, expr.line);
+
       this.compilePatternTest(arm.pattern, expr.line);
       this.chunk.emit(Op.JUMP_IF_FALSE, expr.line);
       const nextArm = this.chunk.currentOffset();
       this.chunk.emitI32(0, expr.line);
+
+      // Pattern 매칭 성공 — scope 시작 및 변수 바인딩
+      this.beginScope();
+      this.compilePatternBind(arm.pattern, expr.line, subjectSlot);
 
       // Guard 절이 있으면 추가 조건 검사
       let guardJump: number | null = null;
@@ -1395,23 +1480,23 @@ export class Compiler {
         this.chunk.emitI32(0, expr.line);
       }
 
-      this.chunk.emit(Op.POP, expr.line); // subject 제거
-      this.compileExpr(arm.body); // arm body의 값이 스택에 남음
+      // arm body의 값이 스택에 남음
+      this.compileExpr(arm.body);
+      this.endScope(expr.line); // scope 종료
 
       this.chunk.emit(Op.JUMP, expr.line);
       endJumps.push(this.chunk.currentOffset());
       this.chunk.emitI32(0, expr.line);
 
-      // Guard 실패 시 처리 (패치)
+      // Guard 실패 시 처리 - guard fail 점프를 다음 arm으로 설정
+      this.chunk.patchI32(nextArm, this.chunk.currentOffset());
       if (guardJump !== null) {
+        // guard fail 시에도 같은 위치(nextArm)로 점프하도록 설정
         this.chunk.patchI32(guardJump, this.chunk.currentOffset());
       }
-
-      this.chunk.patchI32(nextArm, this.chunk.currentOffset());
     }
 
-    // fallthrough (아무 arm도 매칭 안 됨) - subject 제거 후 void
-    this.chunk.emit(Op.POP, expr.line);
+    // fallthrough (아무 arm도 매칭 안 됨) - void
     this.chunk.emit(Op.PUSH_VOID, expr.line);
 
     // arm이 성공했으면 여기(PUSH_VOID 이후)로 점프
@@ -1431,7 +1516,6 @@ export class Compiler {
       case "wildcard":
       case "ident":
         // 항상 매칭
-        this.chunk.emit(Op.POP, line); // DUP된 값 제거
         this.chunk.emit(Op.PUSH_TRUE, line);
         break;
       case "literal":
@@ -1468,12 +1552,164 @@ export class Compiler {
     }
   }
 
-  private compilePatternBind(pattern: Pattern, line: number): void {
+  private compilePatternBind(pattern: Pattern, line: number, subjectSlot?: number): void {
     // 패턴에서 바인딩 변수 생성
-    if (pattern.kind === "ident") {
-      // subject가 이미 스택에 있음 — 복원 필요
-      // 여기서는 단순화: match body에서 바인딩 변수에 접근 가능하게
-      // 실제로는 match subject를 로컬에 저장해야 함
+    switch (pattern.kind) {
+      case "ident": {
+        // pattern test 후 스택에 subject가 있음 — 직접 저장
+        const slot = this.declareLocal(pattern.name);
+        this.chunk.emit(Op.STORE_LOCAL, line);
+        this.chunk.emitI32(slot, line);
+        break;
+      }
+      case "struct": {
+        // 구조체 필드 분해 바인딩
+        // Point { x, y } 패턴에서 각 필드에 대해:
+        // LOAD_LOCAL(subjectSlot) → STRUCT_GET(field) → STORE_LOCAL(field_slot)
+        for (const field of pattern.fields) {
+          // subject 로드
+          this.chunk.emit(Op.LOAD_LOCAL, line);
+          this.chunk.emitI32(subjectSlot!, line);
+
+          // 필드 접근
+          this.chunk.emit(Op.STRUCT_GET, line);
+          this.chunk.emitI32(this.chunk.addConstant(field.name), line);
+
+          // 필드 패턴에 바인딩
+          if (field.pattern.kind === "ident") {
+            // 간단한 ident 바인딩
+            const fieldSlot = this.declareLocal(field.pattern.name);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(fieldSlot, line);
+          } else {
+            // 복잡한 패턴 (nested struct, array, etc)
+            const fieldTempSlot = this.declareLocal(`__field_${field.name}__`);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(fieldTempSlot, line);
+            this.compilePatternBind(field.pattern, line, fieldTempSlot);
+          }
+        }
+        break;
+      }
+      case "array": {
+        // 배열 요소 분해 바인딩
+        // [a, b, c] 패턴에서 각 요소에 대해:
+        // LOAD_LOCAL(subjectSlot) → PUSH_I32(index) → ARRAY_GET → STORE_LOCAL(elem_slot)
+        // [a, .., b] rest 패턴의 경우: 뒤쪽 요소는 배열 길이를 동적으로 계산해서 인덱싱
+
+        const restIndex = pattern.restIndex ?? pattern.elements.length;
+        const afterRestCount = pattern.elements.length - restIndex;
+        let arrayLenSlot: number | null = null;
+
+        // rest 패턴이 있고 뒤에 요소가 있으면 배열 길이를 미리 저장
+        if (pattern.rest && afterRestCount > 0) {
+          this.chunk.emit(Op.LOAD_LOCAL, line);
+          this.chunk.emitI32(subjectSlot!, line);
+          // length() 내장 함수 호출
+          this.chunk.emit(Op.CALL_BUILTIN, line);
+          this.chunk.emitI32(this.chunk.addConstant("length"), line);
+          this.chunk.emitByte(1, line); // argCount = 1
+          arrayLenSlot = this.declareLocal("__array_len__");
+          this.chunk.emit(Op.STORE_LOCAL, line);
+          this.chunk.emitI32(arrayLenSlot, line);
+        }
+
+        for (let i = 0; i < pattern.elements.length; i++) {
+          const elem = pattern.elements[i];
+
+          // 실제 배열 인덱스 결정
+          const isAfterRest = i >= restIndex;
+
+          // subject 로드
+          this.chunk.emit(Op.LOAD_LOCAL, line);
+          this.chunk.emitI32(subjectSlot!, line);
+
+          // 인덱스 계산 및 로드
+          if (isAfterRest && arrayLenSlot !== null) {
+            // rest 뒤: len - (afterRestCount - (i - restIndex))
+            // [a, .., b, c], restIndex=1, len=5 → i=1: 5-(2-0)=3, i=2: 5-(2-1)=4
+            const offsetFromEnd = afterRestCount - (i - restIndex);
+            this.chunk.emit(Op.LOAD_LOCAL, line);
+            this.chunk.emitI32(arrayLenSlot, line);
+            this.chunk.emit(Op.PUSH_I32, line);
+            this.chunk.emitI32(offsetFromEnd, line);
+            this.chunk.emit(Op.SUB_I32, line);
+          } else {
+            // rest 앞: 순서대로 0, 1, 2, ...
+            this.chunk.emit(Op.PUSH_I32, line);
+            this.chunk.emitI32(i, line);
+          }
+
+          // 배열 요소 접근
+          this.chunk.emit(Op.ARRAY_GET, line);
+
+          // 요소 패턴에 바인딩
+          if (elem.kind === "ident") {
+            // 간단한 ident 바인딩
+            const elemSlot = this.declareLocal(elem.name);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(elemSlot, line);
+          } else if (elem.kind === "wildcard") {
+            // wildcard는 버림
+            this.chunk.emit(Op.POP, line);
+          } else {
+            // 복잡한 패턴 (nested struct, array, etc)
+            const elemTempSlot = this.declareLocal(`__elem_${i}__`);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(elemTempSlot, line);
+            this.compilePatternBind(elem, line, elemTempSlot);
+          }
+        }
+        break;
+      }
+      case "some":
+      case "ok": {
+        // Option/Result의 inner 패턴 처리
+        if (pattern.inner && subjectSlot !== undefined) {
+          // LOAD_LOCAL(subjectSlot) → UNWRAP → 임시 슬롯에 저장
+          this.chunk.emit(Op.LOAD_LOCAL, line);
+          this.chunk.emitI32(subjectSlot, line);
+          this.chunk.emit(Op.UNWRAP, line);
+
+          if (pattern.inner.kind === "ident") {
+            const innerSlot = this.declareLocal(pattern.inner.name);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(innerSlot, line);
+          } else {
+            const innerTempSlot = this.declareLocal(`__unwrapped__`);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(innerTempSlot, line);
+            this.compilePatternBind(pattern.inner, line, innerTempSlot);
+          }
+        }
+        break;
+      }
+      case "err": {
+        // Err의 inner 패턴 처리 (same as Ok)
+        if (pattern.inner && subjectSlot !== undefined) {
+          this.chunk.emit(Op.LOAD_LOCAL, line);
+          this.chunk.emitI32(subjectSlot, line);
+          this.chunk.emit(Op.UNWRAP, line);
+
+          if (pattern.inner.kind === "ident") {
+            const innerSlot = this.declareLocal(pattern.inner.name);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(innerSlot, line);
+          } else {
+            const innerTempSlot = this.declareLocal(`__unwrapped__`);
+            this.chunk.emit(Op.STORE_LOCAL, line);
+            this.chunk.emitI32(innerTempSlot, line);
+            this.compilePatternBind(pattern.inner, line, innerTempSlot);
+          }
+        }
+        break;
+      }
+      case "wildcard":
+      case "literal":
+      case "none":
+      case "tuple":
+        // 이들은 바인딩이 필요 없음
+        break;
     }
   }
 
