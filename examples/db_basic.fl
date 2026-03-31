@@ -4,43 +4,38 @@ println("🗄️  SQLite 데이터베이스 예제")
 println("")
 
 // 데이터베이스 열기 (또는 생성)
-// var db = sqlite_open("data.db")
+var db = sqlite_open("myapp.db")
+println("✓ 데이터베이스 연결됨")
 
 // 테이블 생성
-// db.execute("
-//   CREATE TABLE IF NOT EXISTS users (
-//     id INTEGER PRIMARY KEY,
-//     name TEXT NOT NULL,
-//     email TEXT UNIQUE,
-//     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-//   )
-// ")
+sqlite_execute(db, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE)", [])
+println("✓ users 테이블 준비됨")
 
-// INSERT
-// db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Alice", "alice@example.com"])
-// db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Bob", "bob@example.com"])
+// INSERT - 여러 레코드 추가
+sqlite_execute(db, "INSERT INTO users (name, email) VALUES (?, ?)", ["Alice", "alice@example.com"])
+sqlite_execute(db, "INSERT INTO users (name, email) VALUES (?, ?)", ["Bob", "bob@example.com"])
+sqlite_execute(db, "INSERT INTO users (name, email) VALUES (?, ?)", ["Charlie", "charlie@example.com"])
+println("✓ 3개 레코드 삽입됨")
 
-// SELECT
-// var users = db.query("SELECT * FROM users")
-// 
-// for user in users {
-//   println("User: " + user.name + " (" + user.email + ")")
-// }
+// SELECT - 모든 사용자 조회
+var result = sqlite_query(db, "SELECT * FROM users", [])
+println("✓ 데이터 조회 완료")
 
-// UPDATE
-// db.execute("UPDATE users SET email = ? WHERE name = ?", ["alice.new@example.com", "Alice"])
+// UPDATE - 이메일 변경
+sqlite_execute(db, "UPDATE users SET email = ? WHERE name = ?", ["alice.new@example.com", "Alice"])
+println("✓ Alice 이메일 업데이트됨")
 
-// DELETE
-// db.execute("DELETE FROM users WHERE name = ?", ["Bob"])
+// DELETE - 특정 사용자 삭제
+sqlite_execute(db, "DELETE FROM users WHERE name = ?", ["Charlie"])
+println("✓ Charlie 삭제됨")
 
-// 트랜잭션
-// db.transaction(fn() {
-//   db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Charlie", "charlie@example.com"])
-//   db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Diana", "diana@example.com"])
-// })
+// 최종 데이터 조회
+var final_result = sqlite_query(db, "SELECT * FROM users", [])
+println("✓ 최종 데이터 조회 완료")
 
 // 연결 종료
-// db.close()
+sqlite_close(db)
+println("✓ 데이터베이스 연결 종료")
 
-println("✓ 데이터베이스 사용 준비 완료!")
-println("  (구현 진행 중)")
+println("")
+println("✨ 데이터베이스 작업 완료!")
