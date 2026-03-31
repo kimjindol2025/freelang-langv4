@@ -1373,6 +1373,17 @@ export class Compiler {
         "pg_begin", "pg_commit", "pg_rollback",
         "mysql_connect", "mysql_query", "mysql_execute", "mysql_close",
         "mysql_begin", "mysql_commit", "mysql_rollback",
+        // v4.3 Extensions
+        // Math (7) - B-1
+        "floor", "ceil", "round", "random", "sin", "cos", "log",
+        // String (3) - B-2
+        "index_of", "pad_left", "pad_right",
+        // Regex (3) - B-3
+        "regex_match", "regex_find_all", "regex_replace",
+        // CSV (2) - B-4
+        "csv_parse", "csv_stringify",
+        // DateTime (3) - B-5
+        "now", "format_date", "parse_date",
       ];
 
       if (builtins.includes(name)) {

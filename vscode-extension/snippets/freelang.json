@@ -1,0 +1,62 @@
+{
+  "Function Declaration": {
+    "prefix": "fn",
+    "body": "fn ${1:name}(${2:args}) -> ${3:return_type} {\n  ${4:// TODO}\n}",
+    "description": "Function declaration"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": "if ${1:condition} {\n  ${2:// TODO}\n}",
+    "description": "If statement"
+  },
+  "If-Else Statement": {
+    "prefix": "ifelse",
+    "body": "if ${1:condition} {\n  ${2:// TODO}\n} else {\n  ${3:// TODO}\n}",
+    "description": "If-else statement"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": "while ${1:condition} {\n  ${2:// TODO}\n}",
+    "description": "While loop"
+  },
+  "For Loop": {
+    "prefix": "for",
+    "body": "for ${1:i} in ${2:range} {\n  ${3:// TODO}\n}",
+    "description": "For loop"
+  },
+  "Match Expression": {
+    "prefix": "match",
+    "body": "match ${1:value} {\n  case ${2:pattern} -> ${3:result},\n  case _ -> ${4:default}\n}",
+    "description": "Match expression"
+  },
+  "Struct Declaration": {
+    "prefix": "struct",
+    "body": "struct ${1:Name} {\n  ${2:field}: ${3:type},\n}",
+    "description": "Struct declaration"
+  },
+  "Impl Block": {
+    "prefix": "impl",
+    "body": "impl ${1:Type} {\n  fn ${2:method}(self: ${1:Type}${3:, args}) -> ${4:return_type} {\n    ${5:// TODO}\n  }\n}",
+    "description": "Implementation block"
+  },
+  "Channel": {
+    "prefix": "chan",
+    "body": "let ${1:ch} = channel<${2:i32}>()\nprintln(${1:ch})",
+    "description": "Create a channel"
+  },
+  "Println": {
+    "prefix": "println",
+    "body": "println(${1:\"message\"})",
+    "description": "Print with newline"
+  },
+  "Variable Declaration": {
+    "prefix": "var",
+    "body": "var ${1:name}: ${2:type} = ${3:value}",
+    "description": "Variable declaration"
+  },
+  "Constant Declaration": {
+    "prefix": "const",
+    "body": "const ${1:NAME} = ${2:value}",
+    "description": "Constant declaration"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "packages": {
+    "string_utils": {
+      "name": "string_utils",
+      "description": "String manipulation utilities for FreeLang",
+      "latest_version": "1.0.0",
+      "versions": ["1.0.0"],
+      "author": "FreeLang Team"
+    },
+    "collections": {
+      "name": "collections",
+      "description": "Advanced data structures (HashMap, HashSet) for FreeLang",
+      "latest_version": "1.0.0",
+      "versions": ["1.0.0"],
+      "author": "FreeLang Team"
+    },
+    "datetime": {
+      "name": "datetime",
+      "description": "Date and time utilities for FreeLang",
+      "latest_version": "1.0.0",
+      "versions": ["1.0.0"],
+      "author": "FreeLang Team"
+    },
+    "db_orm": {
+      "name": "db_orm",
+      "description": "Simple ORM for database operations in FreeLang",
+      "latest_version": "1.0.0",
+      "versions": ["1.0.0"],
+      "author": "FreeLang Team"
+    }
+  }
+}

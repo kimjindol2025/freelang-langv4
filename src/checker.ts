@@ -1608,6 +1608,44 @@ export class TypeChecker {
       case "mysql_begin": case "mysql_commit": case "mysql_rollback":
         return { kind: "void" };
 
+      // v4.3 Extensions - Math (7) - B-1
+      case "floor": case "ceil": case "round":
+        return { kind: "i32" };
+      case "random":
+        return { kind: "f64" };
+      case "sin": case "cos":
+        return { kind: "f64" };
+      case "log":
+        return { kind: "result", ok: { kind: "f64" }, err: { kind: "string" } };
+
+      // v4.3 Extensions - String (3) - B-2
+      case "index_of":
+        return { kind: "option", element: { kind: "i32" } };
+      case "pad_left": case "pad_right":
+        return { kind: "string" };
+
+      // v4.3 Extensions - Regex (3) - B-3
+      case "regex_match":
+        return { kind: "option", element: { kind: "string" } };
+      case "regex_find_all":
+        return { kind: "array", element: { kind: "string" } };
+      case "regex_replace":
+        return { kind: "result", ok: { kind: "string" }, err: { kind: "string" } };
+
+      // v4.3 Extensions - CSV (2) - B-4
+      case "csv_parse":
+        return { kind: "array", element: { kind: "array", element: { kind: "string" } } };
+      case "csv_stringify":
+        return { kind: "string" };
+
+      // v4.3 Extensions - DateTime (3) - B-5
+      case "now":
+        return { kind: "f64" };
+      case "format_date":
+        return { kind: "string" };
+      case "parse_date":
+        return { kind: "result", ok: { kind: "f64" }, err: { kind: "string" } };
+
       default: return null;
     }
   }

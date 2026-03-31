@@ -1,0 +1,76 @@
+// FreeLang v4.2 — 데이터베이스 ORM 유틸리티 라이브러리
+
+/// 테이블의 모든 행을 조회
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+fn db_find_all(db: unknown, table: str) -> unknown {
+  var sql = "SELECT * FROM " + table
+  return sqlite_query(db, sql, [])
+}
+
+/// ID로 특정 행 조회
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+/// id: 조회할 ID 값
+fn db_find_by_id(db: unknown, table: str, id: i32) -> unknown {
+  var sql = "SELECT * FROM " + table + " WHERE id = ?"
+  return sqlite_query(db, sql, [id])
+}
+
+/// 새로운 행 삽입
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+/// columns: 컬럼명 배열 ["id", "name", "email"]
+/// values: 값 배열 [1, "Alice", "alice@example.com"]
+fn db_insert(db: unknown, table: str, columns: [str], values: [unknown]) -> unknown {
+  var cols_str = join(columns, ", ")
+  var placeholders = ""
+  var i: i32 = 0
+  while i < length(columns) {
+    if i > 0 {
+      placeholders = placeholders + ", "
+    }
+    placeholders = placeholders + "?"
+    i = i + 1
+  }
+
+  var sql = "INSERT INTO " + table + " (" + cols_str + ") VALUES (" + placeholders + ")"
+  return sqlite_execute(db, sql, values)
+}
+
+/// ID로 특정 행 삭제
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+/// id: 삭제할 ID 값
+fn db_delete_by_id(db: unknown, table: str, id: i32) -> unknown {
+  var sql = "DELETE FROM " + table + " WHERE id = ?"
+  return sqlite_execute(db, sql, [id])
+}
+
+/// 테이블 행 개수 조회
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+fn db_count(db: unknown, table: str) -> unknown {
+  var sql = "SELECT COUNT(*) as count FROM " + table
+  return sqlite_query(db, sql, [])
+}
+
+/// 조건으로 행 조회
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+/// where: WHERE 조건 (예: "name = ? AND age > ?")
+/// params: 파라미터 배열
+fn db_find_where(db: unknown, table: str, where: str, params: [unknown]) -> unknown {
+  var sql = "SELECT * FROM " + table + " WHERE " + where
+  return sqlite_query(db, sql, params)
+}
+
+/// 조건으로 행 삭제
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+/// where: WHERE 조건
+/// params: 파라미터 배열
+fn db_delete_where(db: unknown, table: str, where: str, params: [unknown]) -> unknown {
+  var sql = "DELETE FROM " + table + " WHERE " + where
+  return sqlite_execute(db, sql, params)
+}

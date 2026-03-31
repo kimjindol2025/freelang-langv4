@@ -65,13 +65,15 @@ type Actor = {
 export class VM {
   private chunk!: Chunk;
   private actors: Actor[] = [];
-  private channels: Channel[] = [];
+  private channels: Map<number, Channel> = new Map();
+  private nextChannelId: number = 0;
   private databases: Map<number, DBAdapter> = new Map();
   private nextDbId: number = 0;
   private globals: Map<string, Value> = new Map();
   private output: string[] = [];
   private instructionCount: number = 0;
   private maxInstructions: number = 1_000_000;
+  private runningCount: number = 0;
 
   async run(chunk: Chunk): Promise<{ output: string[]; error: string | null }> {
     this.chunk = chunk;
@@ -87,6 +89,7 @@ export class VM {
       state: "running",
       waitingChan: null,
     }];
+    this.runningCount = 1;
 
     try {
       await this.schedule();
@@ -104,13 +107,13 @@ export class VM {
     const SLICE = 1000;
     let current = 0;
 
-    while (this.actors.some((a) => a.state !== "done")) {
+    while (this.runningCount > 0) {
       const actor = this.actors[current];
 
       if (actor.state === "running") {
         await this.runSlice(actor, SLICE);
       } else if (actor.state === "waiting" && actor.waitingChan !== null) {
-        const chan = this.channels.find((c) => c.id === actor.waitingChan);
+        const chan = this.channels.get(actor.waitingChan);
         if (chan && chan.buffer.length > 0) {
           const val = chan.buffer.shift()!;
           actor.stack.push({ tag: "ok", val });
@@ -137,12 +140,16 @@ export class VM {
     while (ops < maxOps && actor.state === "running") {
       if (actor.ip >= this.chunk.code.length) {
         actor.state = "done";
+        this.runningCount--;
         return;
       }
 
       const op = this.chunk.code[actor.ip++];
       this.instructionCount++;
       ops++;
+
+      // currentFrame 캐시 (CALL/RETURN에서 업데이트)
+      let currentFrame = actor.frames[actor.frames.length - 1];
 
       switch (op) {
         // ---- 상수 로드 ----
@@ -375,6 +382,7 @@ export class VM {
 
           if (actor.frames.length === 0) {
             actor.state = "done";
+            this.runningCount--;
             return;
           }
 
@@ -386,6 +394,7 @@ export class VM {
         }
         case Op.HALT:
           actor.state = "done";
+          this.runningCount--;
           return;
 
         // ---- 함수 호출 ----
@@ -396,9 +405,9 @@ export class VM {
           const fn = this.chunk.functions[fnIdx];
           if (!fn) throw new Error(`panic: undefined function index ${fnIdx}`);
 
-          const args: Value[] = [];
-          for (let i = 0; i < argCount; i++) {
-            args.unshift(actor.stack.pop()!);
+          const args: Value[] = new Array(argCount);
+          for (let i = argCount - 1; i >= 0; i--) {
+            args[i] = actor.stack.pop()!;
           }
 
           actor.frames.push({
@@ -415,9 +424,9 @@ export class VM {
           const argCount = this.chunk.code[actor.ip++];
           const name = this.chunk.constants[nameIdx];
 
-          const args: Value[] = [];
-          for (let i = 0; i < argCount; i++) {
-            args.unshift(actor.stack.pop()!);
+          const args: Value[] = new Array(argCount);
+          for (let i = argCount - 1; i >= 0; i--) {
+            args[i] = actor.stack.pop()!;
           }
 
           const result = await this.callBuiltin(name, args);
@@ -428,9 +437,9 @@ export class VM {
         // ---- 배열 ----
         case Op.ARRAY_NEW: {
           const count = this.readI32(actor);
-          const elements: Value[] = [];
-          for (let i = 0; i < count; i++) {
-            elements.unshift(actor.stack.pop()!);
+          const elements: Value[] = new Array(count);
+          for (let i = count - 1; i >= 0; i--) {
+            elements[i] = actor.stack.pop()!;
           }
           actor.stack.push({ tag: "arr", val: elements });
           break;
@@ -532,23 +541,25 @@ export class VM {
             waitingChan: null,
           };
           this.actors.push(newActor);
+          this.runningCount++;
           break;
         }
         case Op.CHAN_NEW: {
+          const id = this.nextChannelId++;
           const chan: Channel = {
-            id: this.channels.length,
+            id,
             buffer: [],
             waitingRecv: [],
           };
-          this.channels.push(chan);
-          actor.stack.push({ tag: "chan", id: chan.id });
+          this.channels.set(id, chan);
+          actor.stack.push({ tag: "chan", id });
           break;
         }
         case Op.CHAN_SEND: {
           const val = actor.stack.pop()!;
           const chanVal = actor.stack.pop()!;
           if (chanVal.tag !== "chan") throw new Error("panic: send on non-channel");
-          const chan = this.channels[chanVal.id];
+          const chan = this.channels.get(chanVal.id)!;
           chan.buffer.push(val);
           // 대기 중인 actor 깨우기
           if (chan.waitingRecv.length > 0) {
@@ -564,7 +575,7 @@ export class VM {
         case Op.CHAN_RECV: {
           const chanVal = actor.stack.pop()!;
           if (chanVal.tag !== "chan") throw new Error("panic: recv on non-channel");
-          const chan = this.channels[chanVal.id];
+          const chan = this.channels.get(chanVal.id)!;
           if (chan.buffer.length > 0) {
             const val = chan.buffer.shift()!;
             actor.stack.push({ tag: "ok", val });
@@ -706,12 +717,16 @@ export class VM {
       case "clone":
         return this.deepClone(args[0]);
       case "channel": {
-        const chan: Channel = { id: this.channels.length, buffer: [], waitingRecv: [] };
-        this.channels.push(chan);
-        return { tag: "chan", id: chan.id };
+        const id = this.nextChannelId++;
+        const chan: Channel = { id, buffer: [], waitingRecv: [] };
+        this.channels.set(id, chan);
+        return { tag: "chan", id };
       }
-      case "i32":
-        return { tag: "ok", val: { tag: "i32", val: parseInt(this.valueToString(args[0]), 10) || 0 } };
+      case "i32": {
+        const parsed = parseInt(this.valueToString(args[0]), 10);
+        if (isNaN(parsed)) return { tag: "err", val: { tag: "str", val: "Invalid number for i32" } };
+        return { tag: "ok", val: { tag: "i32", val: parsed } };
+      }
       case "i64":
         return { tag: "ok", val: { tag: "i32", val: parseInt(this.valueToString(args[0]), 10) || 0 } };
       case "f64":
@@ -745,7 +760,7 @@ export class VM {
       case "recv":
         // method-style: obj.recv()
         if (args[0] && args[0].tag === "chan") {
-          const chan = this.channels[args[0].id];
+          const chan = this.channels.get(args[0].id);
           if (chan && chan.buffer.length > 0) {
             return { tag: "ok", val: chan.buffer.shift()! };
           }
@@ -754,7 +769,7 @@ export class VM {
         return { tag: "err", val: { tag: "str", val: "not a channel" } };
       case "send":
         if (args[0] && args[0].tag === "chan") {
-          const chan = this.channels[args[0].id];
+          const chan = this.channels.get(args[0].id);
           if (chan) chan.buffer.push(args[1]);
           return { tag: "void" };
         }
@@ -1249,6 +1264,186 @@ export class VM {
         }
       }
 
+      // Math Functions (7) — B-1
+      case "floor": {
+        const num = (args[0] as any).val ?? 0;
+        return { tag: "i32", val: Math.floor(num) };
+      }
+      case "ceil": {
+        const num = (args[0] as any).val ?? 0;
+        return { tag: "i32", val: Math.ceil(num) };
+      }
+      case "round": {
+        const num = (args[0] as any).val ?? 0;
+        return { tag: "i32", val: Math.round(num) };
+      }
+      case "random": {
+        return { tag: "f64", val: Math.random() };
+      }
+      case "sin": {
+        const num = (args[0] as any).val ?? 0;
+        return { tag: "f64", val: Math.sin(num) };
+      }
+      case "cos": {
+        const num = (args[0] as any).val ?? 0;
+        return { tag: "f64", val: Math.cos(num) };
+      }
+      case "log": {
+        const num = (args[0] as any).val ?? 1;
+        if (num <= 0) return { tag: "err", val: { tag: "str", val: "log: invalid argument" } };
+        return { tag: "f64", val: Math.log(num) };
+      }
+
+      // String Functions (3) — B-2
+      case "index_of": {
+        if (args[0].tag === "str" && args[1].tag === "str") {
+          const idx = args[0].val.indexOf(args[1].val);
+          if (idx >= 0) {
+            return { tag: "some", val: { tag: "i32", val: idx } };
+          }
+          return { tag: "none" };
+        }
+        return { tag: "none" };
+      }
+      case "pad_left": {
+        if (args[0].tag === "str" && args[1].tag === "i32" && args[2].tag === "str") {
+          const char = args[2].val.charAt(0) || " ";
+          const padded = args[0].val.padStart(args[1].val, char);
+          return { tag: "str", val: padded };
+        }
+        return args[0];
+      }
+      case "pad_right": {
+        if (args[0].tag === "str" && args[1].tag === "i32" && args[2].tag === "str") {
+          const char = args[2].val.charAt(0) || " ";
+          const padded = args[0].val.padEnd(args[1].val, char);
+          return { tag: "str", val: padded };
+        }
+        return args[0];
+      }
+
+      // Regex Functions (3) — B-3
+      case "regex_match": {
+        if (args[0].tag === "str" && args[1].tag === "str") {
+          try {
+            const regex = new RegExp(args[1].val);
+            const match = args[0].val.match(regex);
+            if (match) {
+              return { tag: "some", val: { tag: "str", val: match[0] } };
+            }
+            return { tag: "none" };
+          } catch (e) {
+            return { tag: "err", val: { tag: "str", val: `regex error: ${String(e)}` } };
+          }
+        }
+        return { tag: "none" };
+      }
+      case "regex_find_all": {
+        if (args[0].tag === "str" && args[1].tag === "str") {
+          try {
+            const regex = new RegExp(args[1].val, "g");
+            const matches = args[0].val.match(regex) || [];
+            const arr: Value[] = matches.map(m => ({ tag: "str", val: m }));
+            return { tag: "arr", val: arr };
+          } catch (e) {
+            return { tag: "err", val: { tag: "str", val: `regex error: ${String(e)}` } };
+          }
+        }
+        return { tag: "arr", val: [] };
+      }
+      case "regex_replace": {
+        if (args[0].tag === "str" && args[1].tag === "str" && args[2].tag === "str") {
+          try {
+            const regex = new RegExp(args[1].val, "g");
+            const replaced = args[0].val.replace(regex, args[2].val);
+            return { tag: "str", val: replaced };
+          } catch (e) {
+            return { tag: "err", val: { tag: "str", val: `regex error: ${String(e)}` } };
+          }
+        }
+        return args[0];
+      }
+
+      // CSV Functions (2) — B-4
+      case "csv_parse": {
+        if (args[0].tag === "str") {
+          try {
+            const lines = args[0].val.split("\n").filter(l => l.trim());
+            const result: Value[] = [];
+            for (const line of lines) {
+              const cells = this.parseCsvRow(line);
+              const row: Value[] = cells.map(c => ({ tag: "str", val: c }));
+              result.push({ tag: "arr", val: row });
+            }
+            return { tag: "arr", val: result };
+          } catch (e) {
+            return { tag: "err", val: { tag: "str", val: `CSV parse error: ${String(e)}` } };
+          }
+        }
+        return { tag: "arr", val: [] };
+      }
+      case "csv_stringify": {
+        if (args[0].tag === "arr") {
+          try {
+            const rows: string[] = [];
+            for (const row of args[0].val) {
+              if (row.tag === "arr") {
+                const cells = row.val.map(v => this.valueToString(v));
+                const escaped = cells.map(c => {
+                  if (c.includes(",") || c.includes('"') || c.includes("\n")) {
+                    return `"${c.replace(/"/g, '""')}"`;
+                  }
+                  return c;
+                });
+                rows.push(escaped.join(","));
+              }
+            }
+            return { tag: "str", val: rows.join("\n") };
+          } catch (e) {
+            return { tag: "err", val: { tag: "str", val: `CSV stringify error: ${String(e)}` } };
+          }
+        }
+        return { tag: "str", val: "" };
+      }
+
+      // DateTime Functions (3) — B-5
+      case "now": {
+        return { tag: "f64", val: Date.now() };
+      }
+      case "format_date": {
+        if (args[0].tag === "f64" && args[1].tag === "str") {
+          const timestamp = args[0].val;
+          const format = args[1].val;
+          const date = new Date(timestamp);
+          let result = format;
+          result = result.replace(/YYYY/g, date.getFullYear().toString());
+          result = result.replace(/MM/g, String(date.getMonth() + 1).padStart(2, "0"));
+          result = result.replace(/DD/g, String(date.getDate()).padStart(2, "0"));
+          result = result.replace(/HH/g, String(date.getHours()).padStart(2, "0"));
+          result = result.replace(/mm/g, String(date.getMinutes()).padStart(2, "0"));
+          result = result.replace(/ss/g, String(date.getSeconds()).padStart(2, "0"));
+          return { tag: "str", val: result };
+        }
+        return { tag: "str", val: "" };
+      }
+      case "parse_date": {
+        if (args[0].tag === "str" && args[1].tag === "str") {
+          const dateStr = args[0].val;
+          const format = args[1].val;
+          try {
+            // Simple date parsing - support YYYY-MM-DD HH:mm:ss
+            const timestamp = new Date(dateStr).getTime();
+            if (isNaN(timestamp)) {
+              return { tag: "err", val: { tag: "str", val: "Invalid date format" } };
+            }
+            return { tag: "ok", val: { tag: "f64", val: timestamp } };
+          } catch (e) {
+            return { tag: "err", val: { tag: "str", val: `Date parse error: ${String(e)}` } };
+          }
+        }
+        return { tag: "err", val: { tag: "str", val: "Invalid arguments" } };
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }
@@ -1366,6 +1561,25 @@ export class VM {
       default:
         return null;
     }
+  }
+
+  private parseCsvRow(line: string): string[] {
+    const cells: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"' && (i === 0 || line[i - 1] !== "\\")) {
+        inQuotes = !inQuotes;
+      } else if (char === "," && !inQuotes) {
+        cells.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    cells.push(current);
+    return cells;
   }
 
   // ============================================================

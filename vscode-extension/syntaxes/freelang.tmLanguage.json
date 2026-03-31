@@ -1,0 +1,156 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "FreeLang",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#booleans"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.fl",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.fl",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.fl",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.fl",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.fl",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.fl",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.fl",
+          "match": "\\b(\\d+\\.\\d*)|(\\d*\\.\\d+)([eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.fl",
+          "match": "\\b(\\d+)([eE][+-]?\\d+)?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.fl",
+          "match": "\\b(if|else|while|for|match|break|continue|return|case|when)\\b"
+        },
+        {
+          "name": "keyword.declaration.fl",
+          "match": "\\b(var|let|const|fn|async|await|struct|trait|impl|spawn)\\b"
+        },
+        {
+          "name": "keyword.module.fl",
+          "match": "\\b(import|export|from|as)\\b"
+        },
+        {
+          "name": "keyword.other.fl",
+          "match": "\\b(in|is)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.fl",
+          "match": "\\b(i32|i64|f64|bool|string|void|channel)\\b"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.fl",
+          "match": "\\b(true|false|None|Some)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.fl",
+          "match": "\\bfn\\s+([a-zA-Z_가-힣][a-zA-Z0-9_가-힣]*)(?=\\()",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.fl"
+            }
+          }
+        },
+        {
+          "name": "support.function.builtin.fl",
+          "match": "\\b(println|print|read_line|read_file|write_file|channel|panic|typeof|assert|length|push|pop|slice|clone|char_at|contains|split|trim|to_upper|to_lower|abs|min|max|pow|sqrt|range|md5|sha256|sha512|base64_encode|base64_decode|hmac|json_parse|json_stringify|json_validate|json_pretty|starts_with|ends_with|replace|reverse|sort|unique|gcd|lcm|uuid|timestamp|send|recv|env|http_get|http_post|http_post_json|fetch|floor|ceil|round|random|sin|cos|log|index_of|pad_left|pad_right|regex_match|regex_find_all|regex_replace|csv_parse|csv_stringify|now|format_date|parse_date)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.fl",
+          "match": "(\\+\\+|--|\\*\\*|<<|>>|<=|>=|==|!=|&&|\\|\\||\\+|-|\\*|/|%|=|<|>|!|&|\\||\\^|~|\\?)"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.fl",
+          "match": "[a-zA-Z_가-힣][a-zA-Z0-9_가-힣]*"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.fl"
+}

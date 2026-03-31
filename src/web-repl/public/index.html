@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FreeLang v4 Web REPL</title>
+    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🦁 FreeLang v4 Web REPL</h1>
+        <p>Interactive FreeLang coding environment</p>
+      </div>
+
+      <div class="main">
+        <div class="editor-section">
+          <div class="editor-header">
+            <h2>Code Editor</h2>
+            <button id="btn-clear" class="btn btn-secondary">Clear</button>
+          </div>
+          <textarea id="code-input" class="code-input" placeholder="Enter FreeLang code here..."></textarea>
+          <div class="editor-footer">
+            <button id="btn-run" class="btn btn-primary">Run (Ctrl+Enter)</button>
+            <span id="status" class="status"></span>
+          </div>
+        </div>
+
+        <div class="output-section">
+          <div class="output-header">
+            <h2>Output</h2>
+          </div>
+          <div id="terminal" class="terminal"></div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>🔒 Sandbox environment with 5-second timeout limit</p>
+        <p>
+          <a href="https://github.com/FreeLang/freelang-v4" target="_blank">GitHub</a> •
+          <a href="https://gogs.dclub.kr/kim/freelang-v4" target="_blank">Gogs</a>
+        </p>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.js"></script>
+    <script src="./main.js"></script>
+  </body>
+</html>

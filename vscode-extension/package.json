@@ -1,0 +1,47 @@
+{
+  "name": "freelang",
+  "displayName": "FreeLang",
+  "description": "Syntax highlighting and language support for FreeLang v4",
+  "version": "1.0.0",
+  "publisher": "freelang",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "freelang",
+        "aliases": [
+          "FreeLang",
+          "freelang"
+        ],
+        "extensions": [
+          ".fl"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "freelang",
+        "scopeName": "source.fl",
+        "path": "./syntaxes/freelang.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "freelang",
+        "path": "./snippets/freelang.json"
+      }
+    ]
+  },
+  "keywords": [
+    "freelang",
+    "language",
+    "programming"
+  ],
+  "license": "MIT"
+}

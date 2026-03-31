@@ -72,14 +72,64 @@ async function main(): Promise<void> {
     return;
   }
 
+  // 패키지 매니저 CLI
+  if (args[0] === "init") {
+    const { initProject } = await import("./pkg/init");
+    await initProject(args[1] || "my-app");
+    return;
+  }
+
+  if (args[0] === "install") {
+    const { installPackage } = await import("./pkg/install");
+    await installPackage(args[1], process.cwd());
+    return;
+  }
+
+  if (args[0] === "run") {
+    const { runScript } = await import("./pkg/run");
+    await runScript(args[1], process.cwd());
+    return;
+  }
+
+  if (args[0] === "list-packages") {
+    const { listPackages } = await import("./pkg/registry");
+    listPackages();
+    return;
+  }
+
+  if (args[0] === "search-packages") {
+    const { searchPackages } = await import("./pkg/registry");
+    searchPackages(args[1] || "");
+    return;
+  }
+
+  // 웹 REPL
+  if (args[0] === "--web-repl") {
+    const portIdx = args.indexOf("--port");
+    const port = portIdx >= 0 ? parseInt(args[portIdx + 1]) : 3000;
+    const { startWebRepl } = await import("./web-repl/server");
+    await startWebRepl(port);
+    return;
+  }
+
   // 도움말
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-    console.log("🦁 FreeLang v4.1 — AI-First Programming Language");
+    console.log("🦁 FreeLang v4.3 — AI-First Programming Language");
     console.log("");
     console.log("Usage:");
-    console.log("  freelang <file.fl> [options]  파일 실행");
-    console.log("  freelang --repl               대화형 쉘 시작");
-    console.log("  freelang migrate <cmd> [args] 마이그레이션 관리");
+    console.log("  freelang <file.fl> [options]      파일 실행");
+    console.log("  freelang --repl                    대화형 쉘 시작");
+    console.log("  freelang --web-repl [--port PORT]  웹 REPL 시작");
+    console.log("");
+    console.log("Project Management:");
+    console.log("  freelang init [name]               새 프로젝트 생성");
+    console.log("  freelang install <pkg>             패키지 설치");
+    console.log("  freelang run <script>              freelang.toml 스크립트 실행");
+    console.log("  freelang list-packages             전체 패키지 목록");
+    console.log("  freelang search-packages <query>   패키지 검색");
+    console.log("");
+    console.log("Database:");
+    console.log("  freelang migrate <cmd> [args]      마이그레이션 관리");
     console.log("");
     console.log("Options:");
     console.log("  --no-check   타입 체크 건너뛰기");
