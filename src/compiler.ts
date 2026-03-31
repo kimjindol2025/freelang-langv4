@@ -1384,6 +1384,8 @@ export class Compiler {
         "csv_parse", "csv_stringify",
         // DateTime (3) - B-5
         "now", "format_date", "parse_date",
+        // YAML (2) - v4.3 Extension
+        "yaml_parse", "yaml_stringify",
       ];
 
       if (builtins.includes(name)) {

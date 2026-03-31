@@ -1646,6 +1646,12 @@ export class TypeChecker {
       case "parse_date":
         return { kind: "result", ok: { kind: "f64" }, err: { kind: "string" } };
 
+      // v4.3 Extensions - YAML (2)
+      case "yaml_parse":
+        return { kind: "result", ok: { kind: "unknown" }, err: { kind: "string" } };
+      case "yaml_stringify":
+        return { kind: "string" };
+
       default: return null;
     }
   }

@@ -74,3 +74,82 @@ fn db_delete_where(db: unknown, table: str, where: str, params: [unknown]) -> un
   var sql = "DELETE FROM " + table + " WHERE " + where
   return sqlite_execute(db, sql, params)
 }
+
+// ============================================================
+// 타입 매핑 ORM (Type-safe operations)
+// ============================================================
+
+/// 데이터베이스 트랜잭션 시작
+fn db_transaction_begin(db: unknown) -> bool {
+  match sqlite_begin(db) {
+    case Ok(_) -> true,
+    case Err(_) -> false
+  }
+}
+
+/// 데이터베이스 트랜잭션 커밋
+fn db_transaction_commit(db: unknown) -> bool {
+  match sqlite_commit(db) {
+    case Ok(_) -> true,
+    case Err(_) -> false
+  }
+}
+
+/// 데이터베이스 트랜잭션 롤백
+fn db_transaction_rollback(db: unknown) -> bool {
+  match sqlite_rollback(db) {
+    case Ok(_) -> true,
+    case Err(_) -> false
+  }
+}
+
+/// 단일 행 조회 (첫 번째 행만)
+fn db_find_one(db: unknown, table: str, where: str, params: [unknown]) -> unknown {
+  var result = db_find_where(db, table, where, params)
+  match result {
+    case Ok(rows) -> {
+      if length(rows) > 0 {
+        return Ok(rows[0])
+      } else {
+        return Err("No rows found")
+      }
+    },
+    case Err(e) -> return Err(e)
+  }
+}
+
+/// 조건에 맞는 행의 개수
+fn db_count_where(db: unknown, table: str, where: str, params: [unknown]) -> unknown {
+  var sql = "SELECT COUNT(*) as count FROM " + table + " WHERE " + where
+  return sqlite_query(db, sql, params)
+}
+
+/// 행 업데이트
+/// db: 데이터베이스 핸들
+/// table: 테이블 이름
+/// set_clause: SET 절 (예: "name = ?, age = ?")
+/// where_clause: WHERE 절 (예: "id = ?")
+/// params: [name_val, age_val, id_val]
+fn db_update(db: unknown, table: str, set_clause: str, where_clause: str, params: [unknown]) -> unknown {
+  var sql = "UPDATE " + table + " SET " + set_clause + " WHERE " + where_clause
+  return sqlite_execute(db, sql, params)
+}
+
+/// 페이지네이션을 포함한 쿼리
+fn db_find_paginated(db: unknown, table: str, limit: i32, offset: i32) -> unknown {
+  var sql = "SELECT * FROM " + table + " LIMIT ? OFFSET ?"
+  return sqlite_query(db, sql, [limit, offset])
+}
+
+/// 정렬을 포함한 쿼리
+fn db_find_ordered(db: unknown, table: str, order_by: str, asc: bool) -> unknown {
+  var direction = if asc { "ASC" } else { "DESC" }
+  var sql = "SELECT * FROM " + table + " ORDER BY " + order_by + " " + direction
+  return sqlite_query(db, sql, [])
+}
+
+/// 데이터베이스 스키마 조회 (테이블 목록)
+fn db_list_tables(db: unknown) -> unknown {
+  var sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+  return sqlite_query(db, sql, [])
+}

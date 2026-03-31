@@ -1444,6 +1444,28 @@ export class VM {
         return { tag: "err", val: { tag: "str", val: "Invalid arguments" } };
       }
 
+      // YAML Functions (2) — v4.3 Extension
+      case "yaml_parse": {
+        if (args[0].tag === "str") {
+          try {
+            const yaml = args[0].val;
+            const obj = this.parseYAML(yaml);
+            return { tag: "ok", val: this.jsonToValue(obj) };
+          } catch (e) {
+            return { tag: "err", val: { tag: "str", val: `YAML parse error: ${String(e)}` } };
+          }
+        }
+        return { tag: "err", val: { tag: "str", val: "Invalid arguments" } };
+      }
+      case "yaml_stringify": {
+        try {
+          const yamlStr = this.valueToYAML(args[0], 0);
+          return { tag: "str", val: yamlStr };
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `YAML stringify error: ${String(e)}` } };
+        }
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }
@@ -1560,6 +1582,107 @@ export class VM {
         return null;
       default:
         return null;
+    }
+  }
+
+  private parseYAML(yaml: string): any {
+    const lines = yaml.split("\n").map((l) => l);
+    const result: any = {};
+    let currentObj: any = result;
+    const stack: any[] = [result];
+    let lastIndent = -1;
+
+    for (const line of lines) {
+      if (!line.trim() || line.trim().startsWith("#")) continue;
+
+      const indent = line.length - line.trimLeft().length;
+      const trimmed = line.trim();
+
+      // Handle indent changes
+      if (indent > lastIndent) {
+        // Push to stack
+        if (lastIndent >= 0 && typeof currentObj === "object") {
+          stack.push(currentObj);
+        }
+      } else if (indent < lastIndent) {
+        // Pop from stack
+        while (stack.length > 1 && indent < lastIndent) {
+          stack.pop();
+          currentObj = stack[stack.length - 1];
+          lastIndent -= 2;
+        }
+      }
+
+      lastIndent = indent;
+
+      // Parse key: value
+      if (trimmed.includes(":")) {
+        const colonIdx = trimmed.indexOf(":");
+        const key = trimmed.substring(0, colonIdx).trim();
+        const valueStr = trimmed.substring(colonIdx + 1).trim();
+
+        if (valueStr === "") {
+          // Nested object
+          currentObj[key] = {};
+          currentObj = currentObj[key];
+        } else {
+          // Scalar value
+          currentObj[key] = this.parseYAMLValue(valueStr);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private parseYAMLValue(valueStr: string): any {
+    if (valueStr === "true") return true;
+    if (valueStr === "false") return false;
+    if (valueStr === "null") return null;
+    if (!isNaN(Number(valueStr))) return Number(valueStr);
+    if (valueStr.startsWith('"') && valueStr.endsWith('"')) {
+      return valueStr.slice(1, -1).replace(/\\"/g, '"');
+    }
+    if (valueStr.startsWith("'") && valueStr.endsWith("'")) {
+      return valueStr.slice(1, -1);
+    }
+    return valueStr;
+  }
+
+  private valueToYAML(v: Value, indent: number = 0): string {
+    const indentStr = "  ".repeat(indent);
+    const nextIndentStr = "  ".repeat(indent + 1);
+
+    switch (v.tag) {
+      case "i32":
+      case "f64":
+      case "bool":
+        return String((v as any).val);
+      case "str":
+        return `"${(v as any).val.replace(/"/g, '\\"')}"`;
+      case "arr": {
+        const items = (v as any).val as Value[];
+        if (items.length === 0) return "[]";
+        return "[\n" + items.map((item) => nextIndentStr + this.valueToYAML(item, indent + 1)).join(",\n") + "\n" + indentStr + "]";
+      }
+      case "struct": {
+        const fields = (v as any).fields as Map<string, Value>;
+        const lines: string[] = [];
+        for (const [key, val] of fields) {
+          lines.push(`${key}: ${this.valueToYAML(val, indent + 1)}`);
+        }
+        return lines.join("\n" + nextIndentStr);
+      }
+      case "ok":
+        return this.valueToYAML((v as any).val, indent);
+      case "err":
+        return `error: ${this.valueToYAML((v as any).val, indent)}`;
+      case "some":
+        return this.valueToYAML((v as any).val, indent);
+      case "none":
+        return "null";
+      default:
+        return "null";
     }
   }
 
