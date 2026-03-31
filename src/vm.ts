@@ -4,7 +4,7 @@
 import { Op, Chunk, FuncInfo } from "./compiler";
 import * as crypto from "crypto";
 import * as fs from "fs";
-import { SQLiteDB } from "./db";
+import { SQLiteDB, DBAdapter } from "./db";
 
 // ============================================================
 // Value (SPEC_02 Q3)
@@ -66,7 +66,7 @@ export class VM {
   private chunk!: Chunk;
   private actors: Actor[] = [];
   private channels: Channel[] = [];
-  private databases: Map<number, SQLiteDB> = new Map();
+  private databases: Map<number, DBAdapter> = new Map();
   private nextDbId: number = 0;
   private globals: Map<string, Value> = new Map();
   private output: string[] = [];
@@ -589,6 +589,27 @@ export class VM {
   // ============================================================
 
   private async callBuiltin(name: string, args: Value[]): Promise<Value> {
+    // ============================================================
+    // DB 헬퍼 함수들
+    // ============================================================
+    const getDB = (arg: Value): DBAdapter | null => {
+      if (arg.tag !== "db") return null;
+      return this.databases.get(arg.id) ?? null;
+    };
+
+    const dbErr = (msg: string): Value => ({
+      tag: "err",
+      val: { tag: "str", val: msg },
+    });
+
+    const rowToValue = (row: any): Value => {
+      const fields = new Map<string, Value>();
+      for (const [key, val] of Object.entries(row)) {
+        fields.set(key, this.jsonToValue(val));
+      }
+      return { tag: "struct", fields };
+    };
+
     switch (name) {
       case "println": {
         const text = args.map((a) => this.valueToString(a)).join(" ");
@@ -965,105 +986,75 @@ export class VM {
         }
       }
       case "sqlite_query": {
-        if (args[0].tag !== "db") {
-          return { tag: "err", val: { tag: "str", val: "first argument must be a database" } };
-        }
-        const db = this.databases.get(args[0].id);
-        if (!db) {
-          return { tag: "err", val: { tag: "str", val: "database not found" } };
-        }
+        const db = getDB(args[0]);
+        if (!db) return dbErr("first argument must be a database");
         const sql = this.valueToString(args[1]);
         const params = args.length > 2 && args[2].tag === "arr" ? args[2].val.map(v => (v as any).val) : [];
         try {
           const rows = await db.query(sql, params);
-          const result: Value[] = rows.map(row => {
-            const fields = new Map<string, Value>();
-            for (const [key, val] of Object.entries(row)) {
-              fields.set(key, this.jsonToValue(val));
-            }
-            return { tag: "struct", fields };
-          });
+          const result = rows.map(rowToValue);
           return { tag: "ok", val: { tag: "arr", val: result } };
         } catch (e: any) {
-          return { tag: "err", val: { tag: "str", val: e.message } };
+          return dbErr(e.message);
         }
       }
       case "sqlite_execute": {
-        if (args[0].tag !== "db") {
-          return { tag: "err", val: { tag: "str", val: "first argument must be a database" } };
-        }
-        const db = this.databases.get(args[0].id);
-        if (!db) {
-          return { tag: "err", val: { tag: "str", val: "database not found" } };
-        }
+        const db = getDB(args[0]);
+        if (!db) return dbErr("first argument must be a database");
         const sql = this.valueToString(args[1]);
         const params = args.length > 2 && args[2].tag === "arr" ? args[2].val.map(v => (v as any).val) : [];
         try {
           const result = await db.execute(sql, params);
           return { tag: "ok", val: { tag: "struct", fields: new Map([["changes", { tag: "i32", val: result.changes }]]) } };
         } catch (e: any) {
-          return { tag: "err", val: { tag: "str", val: e.message } };
+          return dbErr(e.message);
         }
       }
       case "sqlite_close": {
-        if (args[0].tag !== "db") {
-          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
+        try {
+          await db.close();
+          const dbId = (args[0] as { tag: "db"; id: number }).id;
+          this.databases.delete(dbId);
+          return { tag: "void" };
+        } catch (e: any) {
+          return dbErr(e.message);
         }
-        const db = this.databases.get(args[0].id);
-        if (db) {
-          db.close();
-          this.databases.delete(args[0].id);
-        }
-        return { tag: "void" };
       }
 
       // Transaction builtins
       case "sqlite_begin": {
-        if (args[0].tag !== "db") {
-          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
-        }
-        const db = this.databases.get(args[0].id);
-        if (!db) {
-          return { tag: "err", val: { tag: "str", val: "database not found" } };
-        }
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
         const isolation = args.length > 1 ? this.valueToString(args[1]) : "deferred";
         try {
-          (db as any).begin(isolation);
+          await (db as any).begin(isolation);
           return { tag: "void" };
         } catch (e: any) {
-          return { tag: "err", val: { tag: "str", val: e.message } };
+          return dbErr(e.message);
         }
       }
 
       case "sqlite_commit": {
-        if (args[0].tag !== "db") {
-          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
-        }
-        const db = this.databases.get(args[0].id);
-        if (!db) {
-          return { tag: "err", val: { tag: "str", val: "database not found" } };
-        }
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
         try {
-          (db as any).commit();
+          await (db as any).commit();
           return { tag: "void" };
         } catch (e: any) {
-          return { tag: "err", val: { tag: "str", val: e.message } };
+          return dbErr(e.message);
         }
       }
 
       case "sqlite_rollback": {
-        if (args[0].tag !== "db") {
-          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
-        }
-        const db = this.databases.get(args[0].id);
-        if (!db) {
-          return { tag: "err", val: { tag: "str", val: "database not found" } };
-        }
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
         try {
-          (db as any).rollback();
+          await (db as any).rollback();
           return { tag: "void" };
         } catch (e: any) {
-          return { tag: "err", val: { tag: "str", val: e.message } };
+          return dbErr(e.message);
         }
       }
 

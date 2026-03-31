@@ -24,13 +24,27 @@ export interface TransactionOptions {
 }
 
 /**
+ * 모든 DB 드라이버가 구현해야 하는 공통 인터페이스
+ */
+export interface DBAdapter {
+  query(sql: string, params?: any[]): Promise<Row[]>;
+  execute(sql: string, params?: any[]): Promise<{ changes: number }>;
+  begin(isolation?: string): Promise<void>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+  close(): Promise<void>;
+  readonly driverName: string;
+}
+
+/**
  * SQLite 데이터베이스 구현 (sql.js 기반)
  */
-export class SQLiteDB {
+export class SQLiteDB implements DBAdapter {
   private db: SqlJsDatabase | null = null;
   private filename: string;
   private inTransaction: boolean = false;
   private initialized: boolean = false;
+  readonly driverName = "sqlite";
 
   constructor(filename: string) {
     this.filename = filename;
@@ -240,7 +254,7 @@ export class SQLiteDB {
   /**
    * 데이터베이스 연결 종료
    */
-  close(): void {
+  async close(): Promise<void> {
     if (this.db) {
       this.save();
       this.db.close();
