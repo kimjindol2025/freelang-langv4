@@ -4,6 +4,7 @@
 import { Op, Chunk, FuncInfo } from "./compiler";
 import * as crypto from "crypto";
 import * as fs from "fs";
+import { SQLiteDB } from "./db";
 
 // ============================================================
 // Value (SPEC_02 Q3)
@@ -21,6 +22,7 @@ export type Value =
   | { tag: "some"; val: Value }
   | { tag: "none" }
   | { tag: "chan"; id: number }
+  | { tag: "db"; id: number }
   | { tag: "void" };
 
 // ============================================================
@@ -64,6 +66,8 @@ export class VM {
   private chunk!: Chunk;
   private actors: Actor[] = [];
   private channels: Channel[] = [];
+  private databases: Map<number, SQLiteDB> = new Map();
+  private nextDbId: number = 0;
   private globals: Map<string, Value> = new Map();
   private output: string[] = [];
   private instructionCount: number = 0;
@@ -947,6 +951,72 @@ export class VM {
         }
       }
 
+      // Database (5)
+      case "sqlite_open": {
+        const path = this.valueToString(args[0]);
+        try {
+          const db = new SQLiteDB(path);
+          await db.init();
+          const dbId = this.nextDbId++;
+          this.databases.set(dbId, db);
+          return { tag: "db", id: dbId };
+        } catch (e: any) {
+          return { tag: "err", val: { tag: "str", val: `Database error: ${e.message}` } };
+        }
+      }
+      case "sqlite_query": {
+        if (args[0].tag !== "db") {
+          return { tag: "err", val: { tag: "str", val: "first argument must be a database" } };
+        }
+        const db = this.databases.get(args[0].id);
+        if (!db) {
+          return { tag: "err", val: { tag: "str", val: "database not found" } };
+        }
+        const sql = this.valueToString(args[1]);
+        const params = args.length > 2 && args[2].tag === "arr" ? args[2].val.map(v => (v as any).val) : [];
+        try {
+          const rows = await db.query(sql, params);
+          const result: Value[] = rows.map(row => {
+            const fields = new Map<string, Value>();
+            for (const [key, val] of Object.entries(row)) {
+              fields.set(key, this.jsonToValue(val));
+            }
+            return { tag: "struct", fields };
+          });
+          return { tag: "ok", val: { tag: "arr", val: result } };
+        } catch (e: any) {
+          return { tag: "err", val: { tag: "str", val: e.message } };
+        }
+      }
+      case "sqlite_execute": {
+        if (args[0].tag !== "db") {
+          return { tag: "err", val: { tag: "str", val: "first argument must be a database" } };
+        }
+        const db = this.databases.get(args[0].id);
+        if (!db) {
+          return { tag: "err", val: { tag: "str", val: "database not found" } };
+        }
+        const sql = this.valueToString(args[1]);
+        const params = args.length > 2 && args[2].tag === "arr" ? args[2].val.map(v => (v as any).val) : [];
+        try {
+          const result = await db.execute(sql, params);
+          return { tag: "ok", val: { tag: "struct", fields: new Map([["changes", { tag: "i32", val: result.changes }]]) } };
+        } catch (e: any) {
+          return { tag: "err", val: { tag: "str", val: e.message } };
+        }
+      }
+      case "sqlite_close": {
+        if (args[0].tag !== "db") {
+          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
+        }
+        const db = this.databases.get(args[0].id);
+        if (db) {
+          db.close();
+          this.databases.delete(args[0].id);
+        }
+        return { tag: "void" };
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }
@@ -987,6 +1057,7 @@ export class VM {
       case "err": return `Err(${this.valueToString(v.val)})`;
       case "some": return `Some(${this.valueToString(v.val)})`;
       case "chan": return `channel(${v.id})`;
+      case "db": return `database(${v.id})`;
     }
   }
 

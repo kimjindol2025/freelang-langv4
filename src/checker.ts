@@ -1587,6 +1587,16 @@ export class TypeChecker {
       case "http_get": case "http_post": case "http_post_json": case "fetch":
         return { kind: "result", ok: { kind: "string" }, err: { kind: "string" } };
 
+      // Database (Phase 3)
+      case "sqlite_open":
+        return { kind: "unknown" }; // Returns database handle
+      case "sqlite_query":
+        return { kind: "result", ok: { kind: "array", element: { kind: "unknown" } }, err: { kind: "string" } };
+      case "sqlite_execute":
+        return { kind: "result", ok: { kind: "unknown" }, err: { kind: "string" } };
+      case "sqlite_close":
+        return { kind: "void" };
+
       default: return null;
     }
   }

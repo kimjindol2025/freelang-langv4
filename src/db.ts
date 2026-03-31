@@ -1,8 +1,9 @@
-// FreeLang v4.2 — 데이터베이스 지원
+// FreeLang v4.2 — 데이터베이스 지원 (sql.js 기반)
 // SQLite, PostgreSQL, MySQL 인터페이스
 
-import Database from "better-sqlite3";
+import initSqlJs, { Database as SqlJsDatabase } from "sql.js";
 import * as fs from "fs";
+import * as path from "path";
 
 /**
  * FreeLang Database API
@@ -23,25 +24,74 @@ export interface TransactionOptions {
 }
 
 /**
- * SQLite 데이터베이스 구현
+ * SQLite 데이터베이스 구현 (sql.js 기반)
  */
 export class SQLiteDB {
-  private db: Database.Database;
+  private db: SqlJsDatabase | null = null;
+  private filename: string;
   private inTransaction: boolean = false;
+  private initialized: boolean = false;
 
   constructor(filename: string) {
-    this.db = new Database(filename);
-    // 외래 키 제약 활성화
-    this.db.pragma("foreign_keys = ON");
+    this.filename = filename;
+  }
+
+  /**
+   * 초기화 (비동기)
+   */
+  async init(): Promise<void> {
+    if (this.initialized) return;
+
+    try {
+      const SQL = await initSqlJs();
+
+      // 파일에서 로드하거나 새 DB 생성
+      if (fs.existsSync(this.filename)) {
+        const buffer = fs.readFileSync(this.filename);
+        this.db = new SQL.Database(buffer);
+      } else {
+        this.db = new SQL.Database();
+      }
+
+      // 외래 키 제약 활성화
+      this.db.run("PRAGMA foreign_keys = ON");
+
+      this.initialized = true;
+    } catch (e: any) {
+      throw new Error(`Database initialization failed: ${e.message}`);
+    }
+  }
+
+  /**
+   * 디스크에 저장
+   */
+  save(): void {
+    if (!this.db) return;
+
+    const data = this.db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(this.filename, buffer);
   }
 
   /**
    * SELECT 쿼리 실행
    */
   async query(sql: string, params: any[] = []): Promise<Row[]> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error("Database not initialized");
+
     try {
       const stmt = this.db.prepare(sql);
-      const result = stmt.all(...params) as Row[];
+      stmt.bind(params);
+
+      const result: Row[] = [];
+
+      while (stmt.step()) {
+        const row = stmt.getAsObject() as Row;
+        result.push(row);
+      }
+
+      stmt.free();
       return result;
     } catch (e: any) {
       throw new Error(`Query error: ${e.message}`);
@@ -52,23 +102,21 @@ export class SQLiteDB {
    * 단일 행 조회
    */
   async queryOne(sql: string, params: any[] = []): Promise<Row | null> {
-    try {
-      const stmt = this.db.prepare(sql);
-      const result = stmt.get(...params) as Row | undefined;
-      return result || null;
-    } catch (e: any) {
-      throw new Error(`Query error: ${e.message}`);
-    }
+    const result = await this.query(sql, params);
+    return result.length > 0 ? result[0] : null;
   }
 
   /**
    * INSERT/UPDATE/DELETE 실행
    */
   async execute(sql: string, params: any[] = []): Promise<{ changes: number }> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error("Database not initialized");
+
     try {
-      const stmt = this.db.prepare(sql);
-      const info = stmt.run(...params);
-      return { changes: info.changes };
+      this.db.run(sql, params);
+      this.save();
+      return { changes: this.db.getRowsModified() };
     } catch (e: any) {
       throw new Error(`Execute error: ${e.message}`);
     }
@@ -78,31 +126,31 @@ export class SQLiteDB {
    * 트랜잭션 실행
    */
   async transaction<T>(
-    callback: () => Promise<T> | T,
-    options: TransactionOptions = {}
+    callback: () => Promise<T> | T
   ): Promise<T> {
-    const isolation = options.isolation || "deferred";
-    const startSql = `BEGIN ${isolation}`;
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error("Database not initialized");
 
     try {
-      this.db.exec(startSql);
+      this.db.run("BEGIN");
       this.inTransaction = true;
 
       const result = await callback();
 
-      this.db.exec("COMMIT");
+      this.db.run("COMMIT");
       this.inTransaction = false;
+      this.save();
 
       return result;
     } catch (e: any) {
-      this.db.exec("ROLLBACK");
+      this.db.run("ROLLBACK");
       this.inTransaction = false;
       throw new Error(`Transaction error: ${e.message}`);
     }
   }
 
   /**
-   * 테이블 생성 (간단한 DDL)
+   * 테이블 생성
    */
   async createTable(
     tableName: string,
@@ -115,7 +163,7 @@ export class SQLiteDB {
     const sql = `CREATE TABLE IF NOT EXISTS ${tableName} (${columnDefs})`;
 
     try {
-      this.db.exec(sql);
+      await this.execute(sql);
     } catch (e: any) {
       throw new Error(`Create table error: ${e.message}`);
     }
@@ -126,7 +174,7 @@ export class SQLiteDB {
    */
   async dropTable(tableName: string): Promise<void> {
     try {
-      this.db.exec(`DROP TABLE IF EXISTS ${tableName}`);
+      await this.execute(`DROP TABLE IF EXISTS ${tableName}`);
     } catch (e: any) {
       throw new Error(`Drop table error: ${e.message}`);
     }
@@ -152,24 +200,13 @@ export class SQLiteDB {
   }
 
   /**
-   * 데이터베이스 백업
-   */
-  async backup(backupPath: string): Promise<void> {
-    try {
-      const backupDb = new Database(backupPath);
-      this.db.backup(backupDb);
-      backupDb.close();
-    } catch (e: any) {
-      throw new Error(`Backup error: ${e.message}`);
-    }
-  }
-
-  /**
    * 데이터베이스 연결 종료
    */
   close(): void {
     if (this.db) {
+      this.save();
       this.db.close();
+      this.db = null;
     }
   }
 
@@ -177,20 +214,20 @@ export class SQLiteDB {
    * 데이터베이스 정보
    */
   getInfo(): {
-    readonly: boolean;
-    memory: boolean;
     filename: string;
+    initialized: boolean;
+    inTransaction: boolean;
   } {
     return {
-      readonly: this.db.readonly,
-      memory: this.db.memory,
-      filename: this.db.name,
+      filename: this.filename,
+      initialized: this.initialized,
+      inTransaction: this.inTransaction,
     };
   }
 }
 
 /**
- * 쿼리 빌더 (선택사항)
+ * 쿼리 빌더
  */
 export class QueryBuilder {
   private table: string = "";
@@ -200,6 +237,7 @@ export class QueryBuilder {
   private offsetValue: number = 0;
   private selectColumns: string[] = ["*"];
   private joinClauses: string[] = [];
+  private params: any[] = [];
 
   constructor(table: string) {
     this.table = table;
@@ -210,8 +248,9 @@ export class QueryBuilder {
     return this;
   }
 
-  where(condition: string): QueryBuilder {
+  where(condition: string, ...params: any[]): QueryBuilder {
     this.whereConditions.push(condition);
+    this.params.push(...params);
     return this;
   }
 
@@ -235,7 +274,7 @@ export class QueryBuilder {
     return this;
   }
 
-  build(): string {
+  build(): { sql: string; params: any[] } {
     let sql = `SELECT ${this.selectColumns.join(", ")} FROM ${this.table}`;
 
     if (this.joinClauses.length > 0) {
@@ -258,11 +297,12 @@ export class QueryBuilder {
       sql += ` OFFSET ${this.offsetValue}`;
     }
 
-    return sql;
+    return { sql, params: this.params };
   }
 
   async execute(db: SQLiteDB): Promise<Row[]> {
-    return await db.query(this.build());
+    const { sql, params } = this.build();
+    return await db.query(sql, params);
   }
 }
 
@@ -276,24 +316,29 @@ export class MigrationManager {
   constructor(db: SQLiteDB, migrationsDir: string = "./migrations") {
     this.db = db;
     this.migrationsDir = migrationsDir;
-    this.init();
   }
 
   private async init(): Promise<void> {
     // 마이그레이션 메타테이블 생성
-    await this.db.execute(`
-      CREATE TABLE IF NOT EXISTS _migrations (
-        id INTEGER PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL,
-        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    try {
+      await this.db.execute(`
+        CREATE TABLE IF NOT EXISTS _migrations (
+          id INTEGER PRIMARY KEY,
+          name TEXT UNIQUE NOT NULL,
+          applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    } catch (e) {
+      // 이미 존재할 수 있음
+    }
   }
 
   /**
    * 모든 마이그레이션 실행
    */
   async up(): Promise<void> {
+    await this.init();
+
     if (!fs.existsSync(this.migrationsDir)) {
       console.log("마이그레이션 디렉토리가 없습니다");
       return;
@@ -315,12 +360,19 @@ export class MigrationManager {
       }
 
       const sql = fs.readFileSync(
-        `${this.migrationsDir}/${file}`,
+        path.join(this.migrationsDir, file),
         "utf-8"
       );
 
       try {
-        await this.db.execute(sql);
+        // 여러 SQL 명령 실행
+        const statements = sql.split(";").filter((s) => s.trim());
+        for (const stmt of statements) {
+          if (stmt.trim()) {
+            await this.db.execute(stmt);
+          }
+        }
+
         await this.db.execute(
           "INSERT INTO _migrations (name) VALUES (?)",
           [file]
@@ -337,6 +389,9 @@ export class MigrationManager {
    * 마이그레이션 이력 조회
    */
   async status(): Promise<Row[]> {
-    return await this.db.query("SELECT * FROM _migrations ORDER BY applied_at");
+    await this.init();
+    return await this.db.query(
+      "SELECT * FROM _migrations ORDER BY applied_at"
+    );
   }
 }
