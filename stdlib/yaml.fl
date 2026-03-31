@@ -1,0 +1,259 @@
+// FreeLang v4.2 — 간단한 YAML 파서
+// 지원 기능:
+// - 기본 스칼라 (string, number, bool)
+// - 리스트 (- item)
+// - 맵 (key: value)
+// - 들여쓰기 기반 계층 구조
+
+/// YAML 값 타입
+struct YamlValue {
+    kind: str        // "string", "number", "bool", "list", "map", "null"
+    str_val: str
+    num_val: f64
+    bool_val: bool
+    list_val: [YamlValue]
+    map_val: [YamlEntry]
+}
+
+struct YamlEntry {
+    key: str
+    value: YamlValue
+}
+
+/// 문자열 값을 YAML 값으로 변환
+fn string_to_yaml_value(s: str) -> YamlValue {
+    // null 체크
+    if s == "null" || s == "" {
+        return YamlValue {
+            kind: "null",
+            str_val: "",
+            num_val: 0.0,
+            bool_val: false,
+            list_val: [],
+            map_val: []
+        }
+    }
+
+    // bool 체크
+    if s == "true" {
+        return YamlValue {
+            kind: "bool",
+            str_val: "",
+            num_val: 0.0,
+            bool_val: true,
+            list_val: [],
+            map_val: []
+        }
+    }
+    if s == "false" {
+        return YamlValue {
+            kind: "bool",
+            str_val: "",
+            num_val: 0.0,
+            bool_val: false,
+            list_val: [],
+            map_val: []
+        }
+    }
+
+    // number 체크
+    var is_num = true
+    var i: i32 = 0
+    if char_at(s, 0) == "-" {
+        i = 1
+    }
+    var has_dot = false
+    while i < length(s) {
+        var c = char_at(s, i)
+        if c == "." {
+            if has_dot {
+                is_num = false
+                break
+            }
+            has_dot = true
+        } else if (c < "0" || c > "9") && c != "." {
+            is_num = false
+            break
+        }
+        i = i + 1
+    }
+
+    if is_num {
+        return YamlValue {
+            kind: "number",
+            str_val: "",
+            num_val: parse_float(s),
+            bool_val: false,
+            list_val: [],
+            map_val: []
+        }
+    }
+
+    // string (따옴표 제거)
+    var str_val = s
+    if (char_at(s, 0) == "\"" || char_at(s, 0) == "'") &&
+       (char_at(s, length(s) - 1) == "\"" || char_at(s, length(s) - 1) == "'") {
+        str_val = substring(s, 1, length(s) - 1)
+    }
+
+    YamlValue {
+        kind: "string",
+        str_val: str_val,
+        num_val: 0.0,
+        bool_val: false,
+        list_val: [],
+        map_val: []
+    }
+}
+
+/// YAML 문자열 파싱 (간단한 버전)
+fn parse_yaml(content: str) -> YamlValue {
+    var lines = split(content, "\n")
+    var result = parse_yaml_lines(lines, 0)
+    result.1
+}
+
+/// 라인 기반 YAML 파싱 (내부 함수)
+fn parse_yaml_lines(lines: [str], start_indent: i32) -> [YamlValue] {
+    var result: [YamlValue] = []
+    var i: i32 = 0
+
+    while i < length(lines) {
+        var line = lines[i]
+        var trimmed = trim(line)
+
+        if trimmed == "" {
+            i = i + 1
+            continue
+        }
+
+        var indent = get_indent(line)
+
+        if indent < start_indent {
+            break
+        }
+
+        // 리스트 항목
+        if startsWith(trimmed, "- ") {
+            var item_str = substring(trimmed, 2, length(trimmed))
+            var item = string_to_yaml_value(trim(item_str))
+            result.push(item)
+        } else if contains(trimmed, ": ") {
+            // 맵 항목
+            var colon_pos = find_char(trimmed, ":")
+            var key = trim(substring(trimmed, 0, colon_pos))
+            var value_str = trim(substring(trimmed, colon_pos + 1, length(trimmed)))
+
+            if value_str == "" {
+                // 중첩된 맵/리스트
+                i = i + 1
+                // 더 깊은 들여쓰기 확인
+                var nested: [YamlValue] = []
+                while i < length(lines) {
+                    var next_line = lines[i]
+                    var next_indent = get_indent(next_line)
+                    if next_indent <= indent {
+                        break
+                    }
+                    i = i + 1
+                }
+            } else {
+                var value = string_to_yaml_value(value_str)
+                var entry = YamlEntry { key: key, value: value }
+                var map_val: [YamlEntry] = []
+                map_val.push(entry)
+                var map_result = YamlValue {
+                    kind: "map",
+                    str_val: "",
+                    num_val: 0.0,
+                    bool_val: false,
+                    list_val: [],
+                    map_val: map_val
+                }
+                result.push(map_result)
+            }
+        }
+
+        i = i + 1
+    }
+
+    result
+}
+
+/// 들여쓰기 수준 구하기
+fn get_indent(line: str) -> i32 {
+    var indent: i32 = 0
+    var i: i32 = 0
+    while i < length(line) {
+        var c = char_at(line, i)
+        if c == " " {
+            indent = indent + 1
+        } else if c == "\t" {
+            indent = indent + 4
+        } else {
+            break
+        }
+        i = i + 1
+    }
+    indent
+}
+
+/// 특정 문자의 위치 찾기
+fn find_char(s: str, c: str) -> i32 {
+    var i: i32 = 0
+    while i < length(s) {
+        if char_at(s, i) == c {
+            return i
+        }
+        i = i + 1
+    }
+    -1
+}
+
+/// 문자열 포함 확인
+fn contains(s: str, substr: str) -> bool {
+    var i: i32 = 0
+    while i <= length(s) - length(substr) {
+        if substring(s, i, i + length(substr)) == substr {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+/// 실수 파싱
+fn parse_float(s: str) -> f64 {
+    // 간단한 구현
+    // 프로덕션: 표준 라이브러리 함수 사용 필요
+    var result: f64 = 0.0
+    var i: i32 = 0
+    var is_negative = false
+
+    if char_at(s, 0) == "-" {
+        is_negative = true
+        i = 1
+    }
+
+    var decimal_pos: i32 = -1
+    var j: i32 = i
+    while j < length(s) {
+        if char_at(s, j) == "." {
+            decimal_pos = j
+            break
+        }
+        j = j + 1
+    }
+
+    if decimal_pos == -1 {
+        result = float(int(s))
+    } else {
+        result = float(int(substring(s, 0, decimal_pos)))
+    }
+
+    if is_negative {
+        result = 0.0 - result
+    }
+
+    result
+}

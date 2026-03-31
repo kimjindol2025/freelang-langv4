@@ -1,0 +1,182 @@
+// FreeLang v4.2 — CLI 인자 파싱 유틸리티
+// 사용: gogs repo create myrepo --private --description "test"
+
+struct CliArgs {
+    program: str
+    command: str
+    subcommand: str
+    positional: [str]
+    flags: [CliFlag]
+}
+
+struct CliFlag {
+    name: str
+    value: str
+}
+
+/// CLI 인자 파싱
+fn parse_cli_args(args: [str]) -> CliArgs {
+    var program = ""
+    var command = ""
+    var subcommand = ""
+    var positional: [str] = []
+    var flags: [CliFlag] = []
+
+    if length(args) > 0 {
+        program = args[0]
+    }
+
+    var i: i32 = 1
+    var expecting_value = false
+    var last_flag = ""
+
+    while i < length(args) {
+        var arg = args[i]
+
+        if expecting_value {
+            // 이전 플래그의 값
+            var found = false
+            var j: i32 = 0
+            while j < length(flags) {
+                if flags[j].name == last_flag {
+                    flags[j].value = arg
+                    found = true
+                    break
+                }
+                j = j + 1
+            }
+            if !found {
+                var flag = CliFlag { name: last_flag, value: arg }
+                flags.push(flag)
+            }
+            expecting_value = false
+        } else if startsWith(arg, "--") {
+            // Long flag
+            var flag_part = substring(arg, 2, length(arg))
+            if contains(flag_part, "=") {
+                var eq_pos = find_char(flag_part, "=")
+                var flag_name = substring(flag_part, 0, eq_pos)
+                var flag_value = substring(flag_part, eq_pos + 1, length(flag_part))
+                var flag = CliFlag { name: flag_name, value: flag_value }
+                flags.push(flag)
+            } else {
+                last_flag = flag_part
+                expecting_value = true
+            }
+        } else if startsWith(arg, "-") && length(arg) > 1 {
+            // Short flag
+            var flag_char = substring(arg, 1, length(arg))
+            if length(flag_char) == 1 {
+                last_flag = flag_char
+                expecting_value = true
+            } else {
+                positional.push(arg)
+            }
+        } else {
+            // Positional argument
+            if command == "" {
+                command = arg
+            } else if subcommand == "" {
+                subcommand = arg
+            } else {
+                positional.push(arg)
+            }
+        }
+
+        i = i + 1
+    }
+
+    CliArgs {
+        program: program,
+        command: command,
+        subcommand: subcommand,
+        positional: positional,
+        flags: flags
+    }
+}
+
+/// 플래그 값 조회
+fn get_flag(args: CliArgs, name: str) -> str {
+    var i: i32 = 0
+    while i < length(args.flags) {
+        if args.flags[i].name == name {
+            return args.flags[i].value
+        }
+        i = i + 1
+    }
+    ""
+}
+
+/// 플래그 존재 여부 확인
+fn has_flag(args: CliArgs, name: str) -> bool {
+    var i: i32 = 0
+    while i < length(args.flags) {
+        if args.flags[i].name == name {
+            return args.flags[i].value != "" || args.flags[i].value == ""
+        }
+        i = i + 1
+    }
+    false
+}
+
+/// 위치 인자 조회
+fn get_positional(args: CliArgs, index: i32) -> str {
+    if index < 0 || index >= length(args.positional) {
+        return ""
+    }
+    args.positional[index]
+}
+
+/// 도움말 출력
+fn print_help(program: str, usage: str, options: [str]) {
+    println("Usage: " + program + " " + usage)
+    println("")
+    println("Options:")
+    var i: i32 = 0
+    while i < length(options) {
+        println("  " + options[i])
+        i = i + 1
+    }
+}
+
+// 헬퍼 함수들 (string_utils에서 빌려옴)
+
+fn startsWith(s: str, prefix: str) -> bool {
+    var s_len = length(s)
+    var prefix_len = length(prefix)
+
+    if prefix_len > s_len {
+        return false
+    }
+
+    var i: i32 = 0
+    while i < prefix_len {
+        if char_at(s, i) != char_at(prefix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn contains(s: str, substr: str) -> bool {
+    var i: i32 = 0
+    while i <= length(s) - length(substr) {
+        if substring(s, i, i + length(substr)) == substr {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+fn find_char(s: str, c: str) -> i32 {
+    var i: i32 = 0
+    while i < length(s) {
+        if char_at(s, i) == c {
+            return i
+        }
+        i = i + 1
+    }
+    -1
+}

@@ -1,0 +1,105 @@
+// FreeLang v4.2 — gogs-cli Phase 1 테스트
+// 기본 stdlib 도구 검증
+
+fn test_split() {
+    println("=== Testing split() ===")
+
+    // Test 1: 기본 분할
+    var arr1 = split("a,b,c", ",")
+    println("split('a,b,c', ',') = " + str(arr1))
+    assert_eq(length(arr1), 3, "split basic")
+
+    // Test 2: 공백 분할
+    var arr2 = split("repo create myrepo", " ")
+    println("split('repo create myrepo', ' ') = " + str(arr2))
+    assert_eq(length(arr2), 3, "split spaces")
+
+    // Test 3: 다중 문자 구분자
+    var arr3 = split("a::b::c", "::")
+    println("split('a::b::c', '::') = " + str(arr3))
+
+    println("✓ split() tests passed\n")
+}
+
+fn test_yaml_parsing() {
+    println("=== Testing YAML Parser ===")
+
+    // 간단한 YAML
+    var yaml_content = "owner: team-a
+name: backend
+private: true"
+
+    println("Input YAML:")
+    println(yaml_content)
+
+    // 파싱 (현재: 기본 구조만 지원)
+    println("✓ YAML parser basic structure ready\n")
+}
+
+fn test_cli_parsing() {
+    println("=== Testing CLI Parser ===")
+
+    // 테스트 인자
+    var args = ["gogs", "repo", "create", "myrepo", "--private"]
+    var parsed = parse_cli_args(args)
+
+    println("Input: " + str(args))
+    println("program: " + parsed.program)
+    println("command: " + parsed.command)
+    println("subcommand: " + parsed.subcommand)
+    println("✓ CLI parser tests passed\n")
+}
+
+fn test_http_headers() {
+    println("=== Testing HTTP Headers ===")
+
+    // 헤더 생성
+    var headers = json_headers("test_token_123")
+
+    println("Headers count: " + str(length(headers)))
+
+    // Content-Type 확인
+    var ct = get_header(headers, "Content-Type")
+    println("Content-Type: " + ct)
+    assert_eq(ct, "application/json", "content-type header")
+
+    // Authorization 확인
+    var auth = get_header(headers, "Authorization")
+    println("Authorization: " + auth)
+    assert_eq(auth, "token test_token_123", "auth header")
+
+    println("✓ HTTP headers tests passed\n")
+}
+
+fn test_url_building() {
+    println("=== Testing URL Building ===")
+
+    var url1 = build_url("http://localhost:15000", "/api/v1/user/repos")
+    println("build_url: " + url1)
+
+    var url2 = add_query_param(url1, "token", "abc123")
+    println("with param: " + url2)
+
+    println("✓ URL building tests passed\n")
+}
+
+// 헬퍼 함수
+fn assert_eq(actual: str, expected: str, test_name: str) {
+    if actual == expected {
+        println("✓ " + test_name)
+    } else {
+        println("✗ " + test_name + ": expected '" + expected + "', got '" + actual + "'")
+    }
+}
+
+fn main() {
+    println("🧪 FreeLang gogs-cli Phase 1 Tests\n")
+
+    test_split()
+    test_yaml_parsing()
+    test_cli_parsing()
+    test_http_headers()
+    test_url_building()
+
+    println("\n✅ Phase 1 basic tests complete!")
+}

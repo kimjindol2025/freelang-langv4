@@ -82,6 +82,93 @@ impl HashMap<i32, i32> {
   }
 }
 
+/// 문자열 키-값 맵 (gogs-cli용)
+impl HashMap<str, str> {
+  /// 새로운 HashMap<str, str> 생성
+  fn new() -> HashMap<str, str> {
+    HashMap {
+      keys: [],
+      values: [],
+    }
+  }
+
+  /// 키-값 쌍 추가
+  fn set(self: HashMap<str, str>, key: str, value: str) -> () {
+    var i: i32 = 0
+    while i < length(self.keys) {
+      if self.keys[i] == key {
+        self.values[i] = value
+        return
+      }
+      i = i + 1
+    }
+    push(self.keys, key)
+    push(self.values, value)
+  }
+
+  /// 키로 값 조회
+  fn get(self: HashMap<str, str>, key: str) -> str {
+    var i: i32 = 0
+    while i < length(self.keys) {
+      if self.keys[i] == key {
+        return self.values[i]
+      }
+      i = i + 1
+    }
+    ""
+  }
+
+  /// 키 존재 여부 확인
+  fn contains(self: HashMap<str, str>, key: str) -> bool {
+    var i: i32 = 0
+    while i < length(self.keys) {
+      if self.keys[i] == key {
+        return true
+      }
+      i = i + 1
+    }
+    false
+  }
+
+  /// 값 제거
+  fn remove(self: HashMap<str, str>, key: str) -> bool {
+    var i: i32 = 0
+    while i < length(self.keys) {
+      if self.keys[i] == key {
+        // 마지막 요소로 대체
+        self.keys[i] = self.keys[length(self.keys) - 1]
+        self.values[i] = self.values[length(self.values) - 1]
+        pop(self.keys)
+        pop(self.values)
+        return true
+      }
+      i = i + 1
+    }
+    false
+  }
+
+  /// HashMap 크기
+  fn size(self: HashMap<str, str>) -> i32 {
+    length(self.keys)
+  }
+
+  /// 비우기
+  fn clear(self: HashMap<str, str>) -> () {
+    self.keys = []
+    self.values = []
+  }
+
+  /// 모든 키 조회
+  fn keys(self: HashMap<str, str>) -> [str] {
+    self.keys
+  }
+
+  /// 모든 값 조회
+  fn values(self: HashMap<str, str>) -> [str] {
+    self.values
+  }
+}
+
 /// HashSet 구현 (HashMap 기반)
 struct HashSet<T> {
   items: [str],

@@ -1,0 +1,162 @@
+// FreeLang v4.2 — gogs-cli API 응답 모델
+// Gogs API에서 반환하는 데이터 구조
+
+// ==================== Repo Model ====================
+
+struct Repo {
+    id: i32
+    owner: Owner
+    name: str
+    full_name: str
+    description: str
+    private: bool
+    fork: bool
+    html_url: str
+    ssh_url: str
+    clone_url: str
+    default_branch: str
+    created_at: str
+    updated_at: str
+}
+
+struct Owner {
+    id: i32
+    login: str
+    avatar_url: str
+}
+
+struct CreateRepoRequest {
+    name: str
+    description: str
+    private: bool
+}
+
+// ==================== User Model ====================
+
+struct User {
+    id: i32
+    login: str
+    full_name: str
+    email: str
+    is_admin: bool
+    avatar_url: str
+    created_at: str
+    updated_at: str
+}
+
+struct CreateUserRequest {
+    username: str
+    email: str
+    password: str
+    send_notify: bool
+    is_admin: bool
+}
+
+// ==================== Organization Model ====================
+
+struct Organization {
+    id: i32
+    username: str
+    full_name: str
+    email: str
+    website: str
+    location: str
+    bio: str
+    avatar_url: str
+    created_at: str
+    updated_at: str
+}
+
+struct CreateOrgRequest {
+    username: str
+    full_name: str
+    email: str
+    website: str
+    location: str
+    bio: str
+}
+
+// ==================== Team Model ====================
+
+struct Team {
+    id: i32
+    name: str
+    description: str
+    permission: str
+}
+
+struct CreateTeamRequest {
+    name: str
+    description: str
+    permission: str
+}
+
+// ==================== Issue Model ====================
+
+struct Issue {
+    id: i32
+    number: i32
+    title: str
+    description: str
+    state: str  // "open", "closed"
+    user: User
+    created_at: str
+    updated_at: str
+}
+
+struct CreateIssueRequest {
+    title: str
+    body: str
+}
+
+// ==================== Webhook Model ====================
+
+struct Webhook {
+    id: i32
+    url: str
+    content_type: str
+    events: [str]
+    active: bool
+    created_at: str
+    updated_at: str
+}
+
+struct CreateWebhookRequest {
+    url: str
+    content_type: str
+    events: [str]
+    active: bool
+}
+
+// ==================== Deploy Key Model ====================
+
+struct DeployKey {
+    id: i32
+    key_id: i32
+    title: str
+    key: str
+    url: str
+    read_only: bool
+    created_at: str
+}
+
+struct CreateDeployKeyRequest {
+    title: str
+    key: str
+    read_only: bool
+}
+
+// ==================== Analysis Model ====================
+
+struct RepositoryStats {
+    total: i32
+    public: i32
+    private: i32
+    recently_updated_7days: i32
+    by_updated: [Repo]
+}
+
+struct AnalysisResult {
+    timestamp: str
+    repository_stats: RepositoryStats
+}

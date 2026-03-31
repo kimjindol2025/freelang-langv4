@@ -1,0 +1,134 @@
+// FreeLang v4.2 — gogs-cli 에러 처리
+// Result<T> 타입 및 에러 정의
+
+/// Result 타입: 성공 또는 실패
+enum Result<T> {
+    Ok(T)
+    Err(Error)
+}
+
+/// Gogs CLI 에러 종류
+enum Error {
+    // 네트워크 에러
+    NetworkError(msg: str)
+    HttpError(status: i32, msg: str)
+    ConnectionError(msg: str)
+    Timeout(msg: str)
+
+    // API 에러
+    NotFound(resource: str)
+    BadRequest(msg: str)
+    Unauthorized(msg: str)
+    Forbidden(msg: str)
+    ServerError(msg: str)
+
+    // 파일 에러
+    FileNotFound(path: str)
+    PermissionDenied(path: str)
+    IoError(msg: str)
+
+    // 설정 에러
+    ConfigNotFound(msg: str)
+    InvalidConfig(msg: str)
+    NoDefaultHost(msg: str)
+
+    // 입력 에러
+    InvalidInput(msg: str)
+    MissingArg(arg: str)
+    InvalidFlag(flag: str)
+
+    // 기타
+    Unknown(msg: str)
+}
+
+/// 에러 메시지 출력
+fn error_message(err: Error) -> str {
+    match err {
+        Error::NetworkError(msg) => "Network error: " + msg,
+        Error::HttpError(status, msg) => "HTTP " + str(status) + ": " + msg,
+        Error::ConnectionError(msg) => "Connection error: " + msg,
+        Error::Timeout(msg) => "Timeout: " + msg,
+
+        Error::NotFound(resource) => "Not found: " + resource,
+        Error::BadRequest(msg) => "Bad request: " + msg,
+        Error::Unauthorized(msg) => "Unauthorized: " + msg,
+        Error::Forbidden(msg) => "Forbidden: " + msg,
+        Error::ServerError(msg) => "Server error: " + msg,
+
+        Error::FileNotFound(path) => "File not found: " + path,
+        Error::PermissionDenied(path) => "Permission denied: " + path,
+        Error::IoError(msg) => "I/O error: " + msg,
+
+        Error::ConfigNotFound(msg) => "Config not found: " + msg,
+        Error::InvalidConfig(msg) => "Invalid config: " + msg,
+        Error::NoDefaultHost(msg) => "No default host: " + msg,
+
+        Error::InvalidInput(msg) => "Invalid input: " + msg,
+        Error::MissingArg(arg) => "Missing argument: " + arg,
+        Error::InvalidFlag(flag) => "Invalid flag: " + flag,
+
+        Error::Unknown(msg) => "Unknown error: " + msg,
+    }
+}
+
+/// Result에서 값 추출 (panic if Err)
+fn unwrap<T>(result: Result<T>) -> T {
+    match result {
+        Result::Ok(value) => value,
+        Result::Err(err) => {
+            println("ERROR: " + error_message(err))
+            // panic과 유사한 처리 (현재는 return/exit 구현 필요)
+            panic(error_message(err))
+        }
+    }
+}
+
+/// Result에서 값 추출 (기본값 사용)
+fn unwrap_or<T>(result: Result<T>, default: T) -> T {
+    match result {
+        Result::Ok(value) => value,
+        Result::Err(_) => default,
+    }
+}
+
+/// Result 맵핑
+fn map<T, U>(result: Result<T>, f: fn(T) -> U) -> Result<U> {
+    match result {
+        Result::Ok(value) => Result::Ok(f(value)),
+        Result::Err(err) => Result::Err(err),
+    }
+}
+
+/// Result 체이닝 (flatmap)
+fn flat_map<T, U>(result: Result<T>, f: fn(T) -> Result<U>) -> Result<U> {
+    match result {
+        Result::Ok(value) => f(value),
+        Result::Err(err) => Result::Err(err),
+    }
+}
+
+/// HTTP 상태 코드에서 에러 생성
+fn http_error(status: i32, body: str) -> Error {
+    if status == 404 {
+        return Error::NotFound(body)
+    }
+    if status == 400 {
+        return Error::BadRequest(body)
+    }
+    if status == 401 {
+        return Error::Unauthorized(body)
+    }
+    if status == 403 {
+        return Error::Forbidden(body)
+    }
+    if status >= 500 {
+        return Error::ServerError(body)
+    }
+    Error::HttpError(status, body)
+}
+
+// 참고: match 문법은 다음과 같이 사용
+// match result {
+//     Result::Ok(value) => { /* handle success */ }
+//     Result::Err(err) => { /* handle error */ }
+// }

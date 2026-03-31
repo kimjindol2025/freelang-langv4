@@ -132,3 +132,46 @@ fn reverse(s: str) -> str {
   }
   result
 }
+
+/// 문자열을 구분자로 분할
+fn split(s: str, sep: str) -> [str] {
+  if sep == "" {
+    return []
+  }
+
+  var result: [str] = []
+  var current = ""
+  var i: i32 = 0
+  var sep_len = length(sep)
+
+  while i < length(s) {
+    // sep 패턴 찾기
+    if i + sep_len <= length(s) {
+      var match = true
+      var j: i32 = 0
+      while j < sep_len {
+        if char_at(s, i + j) != char_at(sep, j) {
+          match = false
+          break
+        }
+        j = j + 1
+      }
+
+      if match {
+        result.push(current)
+        current = ""
+        i = i + sep_len
+        continue
+      }
+    }
+
+    current = current + char_at(s, i)
+    i = i + 1
+  }
+
+  if length(current) > 0 || (length(s) > 0 && char_at(s, length(s) - 1) == char_at(sep, 0)) {
+    result.push(current)
+  }
+
+  result
+}

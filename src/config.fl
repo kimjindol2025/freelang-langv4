@@ -1,0 +1,175 @@
+// FreeLang v4.2 — gogs-cli 설정 관리
+// ~/.gogs/config.yaml 읽고 쓰기
+
+struct Config {
+    default_host: str
+    hosts: [HostConfig]
+}
+
+struct HostConfig {
+    name: str
+    url: str
+    token: str
+}
+
+// 설정 파일 경로
+fn config_dir() -> str {
+    home_dir() + "/.gogs"
+}
+
+fn config_file() -> str {
+    config_dir() + "/config.yaml"
+}
+
+// 홈 디렉토리
+fn home_dir() -> str {
+    // TODO: 환경 변수 $HOME 읽기
+    "/root"
+}
+
+/// 설정 로드
+async fn load_config() -> Config {
+    var path = config_file()
+
+    // 파일 존재 확인
+    if !exists(path) {
+        println("Config file not found: " + path)
+        println("Please run: gogs auth login --host URL --token TOKEN")
+
+        // 기본 설정 반환
+        return Config {
+            default_host: "",
+            hosts: []
+        }
+    }
+
+    // 파일 읽기
+    var content = read_file(path)
+
+    // YAML 파싱 (yaml.fl 사용 필요)
+    // var yaml = parse_yaml(content)
+    // ... 파싱 로직
+
+    // 임시: 빈 설정 반환
+    Config {
+        default_host: "",
+        hosts: []
+    }
+}
+
+/// 설정 저장
+async fn save_config(cfg: Config) -> bool {
+    var path = config_file()
+    var dir = config_dir()
+
+    // 디렉토리 생성 (존재하지 않으면)
+    // TODO: mkdir 구현
+
+    // YAML 직렬화
+    var content = config_to_yaml(cfg)
+
+    // 파일 쓰기
+    write_file(path, content)
+
+    // 파일 권한 설정 (600)
+    // TODO: chmod 구현
+
+    true
+}
+
+/// Config를 YAML로 변환
+fn config_to_yaml(cfg: Config) -> str {
+    var result = "default_host: " + cfg.default_host + "\n"
+    result = result + "hosts:\n"
+
+    var i: i32 = 0
+    while i < length(cfg.hosts) {
+        var host = cfg.hosts[i]
+        result = result + "  - name: " + host.name + "\n"
+        result = result + "    url: " + host.url + "\n"
+        result = result + "    token: " + host.token + "\n"
+        i = i + 1
+    }
+
+    result
+}
+
+/// 호스트 추가/업데이트
+async fn add_host(name: str, url: str, token: str) -> Config {
+    var cfg = await load_config()
+
+    // 이미 존재하는 호스트 찾기
+    var found = false
+    var i: i32 = 0
+    while i < length(cfg.hosts) {
+        if cfg.hosts[i].name == name {
+            cfg.hosts[i].url = url
+            cfg.hosts[i].token = token
+            found = true
+            break
+        }
+        i = i + 1
+    }
+
+    // 새 호스트 추가
+    if !found {
+        var host = HostConfig { name: name, url: url, token: token }
+        cfg.hosts.push(host)
+    }
+
+    // 기본 호스트 설정
+    if cfg.default_host == "" {
+        cfg.default_host = name
+    }
+
+    // 저장
+    await save_config(cfg)
+
+    cfg
+}
+
+/// 기본 호스트 조회
+async fn get_default_host() -> HostConfig {
+    var cfg = await load_config()
+
+    if cfg.default_host == "" {
+        return HostConfig { name: "", url: "", token: "" }
+    }
+
+    // 호스트 찾기
+    var i: i32 = 0
+    while i < length(cfg.hosts) {
+        if cfg.hosts[i].name == cfg.default_host {
+            return cfg.hosts[i]
+        }
+        i = i + 1
+    }
+
+    HostConfig { name: "", url: "", token: "" }
+}
+
+/// 호스트 조회 (이름으로)
+async fn get_host(name: str) -> HostConfig {
+    var cfg = await load_config()
+
+    var i: i32 = 0
+    while i < length(cfg.hosts) {
+        if cfg.hosts[i].name == name {
+            return cfg.hosts[i]
+        }
+        i = i + 1
+    }
+
+    HostConfig { name: "", url: "", token: "" }
+}
+
+/// 모든 호스트 목록
+async fn list_hosts() -> [HostConfig] {
+    var cfg = await load_config()
+    cfg.hosts
+}
+
+// 파일 I/O 헬퍼 (FreeLang 내장)
+// - exists(path: str) -> bool
+// - read_file(path: str) -> str
+// - write_file(path: str, content: str) -> void

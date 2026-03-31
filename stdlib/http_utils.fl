@@ -1,0 +1,211 @@
+// FreeLang v4.2 — HTTP 유틸리티
+// HTTP 요청/응답 관련 헬퍼 함수들
+
+struct HttpResponse {
+    status: i32
+    headers: [HttpHeader]
+    body: str
+}
+
+struct HttpHeader {
+    name: str
+    value: str
+}
+
+struct HttpRequest {
+    method: str
+    url: str
+    headers: [HttpHeader]
+    body: str
+}
+
+/// HTTP 헤더 생성
+fn new_headers() -> [HttpHeader] {
+    var headers: [HttpHeader] = []
+    headers
+}
+
+/// 헤더 추가
+fn add_header(headers: [HttpHeader], name: str, value: str) -> [HttpHeader] {
+    var header = HttpHeader { name: name, value: value }
+    headers.push(header)
+    headers
+}
+
+/// 헤더 조회
+fn get_header(headers: [HttpHeader], name: str) -> str {
+    var i: i32 = 0
+    var lower_name = to_lower(name)
+    while i < length(headers) {
+        if to_lower(headers[i].name) == lower_name {
+            return headers[i].value
+        }
+        i = i + 1
+    }
+    ""
+}
+
+/// 기본 JSON 요청 헤더 생성
+fn json_headers(token: str) -> [HttpHeader] {
+    var headers = new_headers()
+    headers = add_header(headers, "Content-Type", "application/json")
+    if token != "" {
+        headers = add_header(headers, "Authorization", "token " + token)
+    }
+    headers
+}
+
+/// HTTP 상태 코드 확인 (성공)
+fn is_success(status: i32) -> bool {
+    status >= 200 && status < 300
+}
+
+/// HTTP 상태 코드 확인 (서버 에러)
+fn is_server_error(status: i32) -> bool {
+    status >= 500 && status < 600
+}
+
+/// HTTP 상태 코드 확인 (클라이언트 에러)
+fn is_client_error(status: i32) -> bool {
+    status >= 400 && status < 500
+}
+
+/// HTTP 상태 코드 확인 (404 Not Found)
+fn is_not_found(status: i32) -> bool {
+    status == 404
+}
+
+/// HTTP 상태 코드 설명
+fn status_text(status: i32) -> str {
+    if status == 200 { return "OK" }
+    if status == 201 { return "Created" }
+    if status == 204 { return "No Content" }
+    if status == 400 { return "Bad Request" }
+    if status == 401 { return "Unauthorized" }
+    if status == 403 { return "Forbidden" }
+    if status == 404 { return "Not Found" }
+    if status == 500 { return "Internal Server Error" }
+    if status == 502 { return "Bad Gateway" }
+    if status == 503 { return "Service Unavailable" }
+    "Unknown"
+}
+
+/// URL 생성
+fn build_url(base: str, path: str) -> str {
+    if endsWith(base, "/") && startsWith(path, "/") {
+        base + substring(path, 1, length(path))
+    } else if !endsWith(base, "/") && !startsWith(path, "/") {
+        base + "/" + path
+    } else {
+        base + path
+    }
+}
+
+/// 쿼리 파라미터 추가
+fn add_query_param(url: str, key: str, value: str) -> str {
+    if contains(url, "?") {
+        url + "&" + url_encode(key) + "=" + url_encode(value)
+    } else {
+        url + "?" + url_encode(key) + "=" + url_encode(value)
+    }
+}
+
+/// URL 인코딩 (간단한 버전)
+fn url_encode(s: str) -> str {
+    // 프로덕션: 더 완전한 구현 필요
+    var result = ""
+    var i: i32 = 0
+    while i < length(s) {
+        var c = char_at(s, i)
+        if (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") ||
+           c == "-" || c == "_" || c == "." || c == "~" {
+            result = result + c
+        } else if c == " " {
+            result = result + "+"
+        } else {
+            result = result + "%" + hex_encode(c)
+        }
+        i = i + 1
+    }
+    result
+}
+
+/// 문자 16진 인코딩
+fn hex_encode(c: str) -> str {
+    // 간단한 구현 (프로덕션에선 더 나은 방식 필요)
+    if c == ":" { return "3A" }
+    if c == "/" { return "2F" }
+    if c == "?" { return "3F" }
+    if c == "#" { return "23" }
+    if c == "[" { return "5B" }
+    if c == "]" { return "5D" }
+    if c == "@" { return "40" }
+    if c == "!" { return "21" }
+    if c == "$" { return "24" }
+    if c == "&" { return "26" }
+    if c == "'" { return "27" }
+    if c == "(" { return "28" }
+    if c == ")" { return "29" }
+    if c == "*" { return "2A" }
+    if c == "+" { return "2B" }
+    if c == "," { return "2C" }
+    if c == ";" { return "3B" }
+    if c == "=" { return "3D" }
+    "XX"
+}
+
+// 헬퍼 함수들
+
+fn to_lower(s: str) -> str {
+    var result = ""
+    var i: i32 = 0
+    while i < length(s) {
+        var c = char_at(s, i)
+        if c >= "A" && c <= "Z" {
+            // ASCII 대소문자 변환
+            var code = int(c)
+            result = result + char(code + 32)
+        } else {
+            result = result + c
+        }
+        i = i + 1
+    }
+    result
+}
+
+fn startsWith(s: str, prefix: str) -> bool {
+    var s_len = length(s)
+    var prefix_len = length(prefix)
+    if prefix_len > s_len { return false }
+    var i: i32 = 0
+    while i < prefix_len {
+        if char_at(s, i) != char_at(prefix, i) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn endsWith(s: str, suffix: str) -> bool {
+    var s_len = length(s)
+    var suffix_len = length(suffix)
+    if suffix_len > s_len { return false }
+    var i: i32 = 0
+    while i < suffix_len {
+        if char_at(s, s_len - suffix_len + i) != char_at(suffix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn contains(s: str, substr: str) -> bool {
+    var i: i32 = 0
+    while i <= length(s) - length(substr) {
+        if substring(s, i, i + length(substr)) == substr {
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
