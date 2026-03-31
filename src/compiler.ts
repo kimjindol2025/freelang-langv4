@@ -1366,9 +1366,11 @@ export class Compiler {
         "env",
         // HTTP Client (4) - Phase 2
         "http_get", "http_post", "http_post_json", "fetch",
-        // Database (7) - Phase 3
+        // Database SQLite (7) + PostgreSQL (7) - Phase 3
         "sqlite_open", "sqlite_query", "sqlite_execute", "sqlite_close",
         "sqlite_begin", "sqlite_commit", "sqlite_rollback",
+        "pg_connect", "pg_query", "pg_execute", "pg_close",
+        "pg_begin", "pg_commit", "pg_rollback",
       ];
 
       if (builtins.includes(name)) {

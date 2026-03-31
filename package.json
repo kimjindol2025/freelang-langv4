@@ -34,6 +34,8 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
+    "@types/pg": "^8.20.0",
+    "pg": "^8.20.0",
     "sql.js": "^1.14.1"
   },
   "devDependencies": {

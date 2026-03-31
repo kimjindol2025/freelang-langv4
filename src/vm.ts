@@ -1058,6 +1058,102 @@ export class VM {
         }
       }
 
+      // PostgreSQL builtins
+      case "pg_connect": {
+        if (args.length < 5) return dbErr("pg_connect requires 5 arguments");
+        const [host, port, user, password, database] = args.map(a => this.valueToString(a));
+        try {
+          const { PostgreSQLDB } = await import("./db");
+          const db = new PostgreSQLDB({
+            host,
+            port: parseInt(port),
+            user,
+            password,
+            database,
+          });
+          await db.connect();
+          const dbId = this.nextDbId++;
+          this.databases.set(dbId, db);
+          return { tag: "db", id: dbId };
+        } catch (e: any) {
+          return dbErr(`pg_connect error: ${e.message}`);
+        }
+      }
+
+      case "pg_query": {
+        const db = getDB(args[0]);
+        if (!db) return dbErr("first argument must be a database");
+        const sql = this.valueToString(args[1]);
+        const params = args.length > 2 && args[2].tag === "arr" ? args[2].val.map(v => (v as any).val) : [];
+        try {
+          const rows = await db.query(sql, params);
+          const result = rows.map(rowToValue);
+          return { tag: "ok", val: { tag: "arr", val: result } };
+        } catch (e: any) {
+          return dbErr(e.message);
+        }
+      }
+
+      case "pg_execute": {
+        const db = getDB(args[0]);
+        if (!db) return dbErr("first argument must be a database");
+        const sql = this.valueToString(args[1]);
+        const params = args.length > 2 && args[2].tag === "arr" ? args[2].val.map(v => (v as any).val) : [];
+        try {
+          const result = await db.execute(sql, params);
+          return { tag: "ok", val: { tag: "struct", fields: new Map([["changes", { tag: "i32", val: result.changes }]]) } };
+        } catch (e: any) {
+          return dbErr(e.message);
+        }
+      }
+
+      case "pg_close": {
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
+        try {
+          await db.close();
+          const dbId = (args[0] as { tag: "db"; id: number }).id;
+          this.databases.delete(dbId);
+          return { tag: "void" };
+        } catch (e: any) {
+          return dbErr(e.message);
+        }
+      }
+
+      case "pg_begin": {
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
+        const isolation = args.length > 1 ? this.valueToString(args[1]) : "deferred";
+        try {
+          await (db as any).begin(isolation);
+          return { tag: "void" };
+        } catch (e: any) {
+          return dbErr(e.message);
+        }
+      }
+
+      case "pg_commit": {
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
+        try {
+          await (db as any).commit();
+          return { tag: "void" };
+        } catch (e: any) {
+          return dbErr(e.message);
+        }
+      }
+
+      case "pg_rollback": {
+        const db = getDB(args[0]);
+        if (!db) return dbErr("argument must be a database");
+        try {
+          await (db as any).rollback();
+          return { tag: "void" };
+        } catch (e: any) {
+          return dbErr(e.message);
+        }
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }

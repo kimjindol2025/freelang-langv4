@@ -1589,13 +1589,18 @@ export class TypeChecker {
 
       // Database (Phase 3)
       case "sqlite_open":
+      case "pg_connect":
         return { kind: "unknown" }; // Returns database handle
       case "sqlite_query":
+      case "pg_query":
         return { kind: "result", ok: { kind: "array", element: { kind: "unknown" } }, err: { kind: "string" } };
       case "sqlite_execute":
+      case "pg_execute":
         return { kind: "result", ok: { kind: "unknown" }, err: { kind: "string" } };
       case "sqlite_close":
       case "sqlite_begin": case "sqlite_commit": case "sqlite_rollback":
+      case "pg_close":
+      case "pg_begin": case "pg_commit": case "pg_rollback":
         return { kind: "void" };
 
       default: return null;

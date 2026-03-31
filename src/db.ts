@@ -447,3 +447,94 @@ export class MigrationManager {
     );
   }
 }
+
+/**
+ * PostgreSQL 데이터베이스 구현 (pg 드라이버 기반)
+ */
+export class PostgreSQLDB implements DBAdapter {
+  private client: any = null;
+  private connected: boolean = false;
+  readonly driverName = "postgresql";
+
+  constructor(private config: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    database: string;
+  }) {}
+
+  /**
+   * 연결 초기화
+   */
+  async connect(): Promise<void> {
+    const { Client } = require("pg");
+    this.client = new Client(this.config);
+    await this.client.connect();
+    this.connected = true;
+  }
+
+  /**
+   * SQL 플레이스홀더 변환 (? → $1, $2, ...)
+   */
+  private convertPlaceholders(sql: string): string {
+    let i = 0;
+    return sql.replace(/\?/g, () => `$${++i}`);
+  }
+
+  /**
+   * SELECT 쿼리 실행
+   */
+  async query(sql: string, params: any[] = []): Promise<Row[]> {
+    if (!this.connected) throw new Error("Not connected to PostgreSQL");
+    const pgSql = this.convertPlaceholders(sql);
+    const result = await this.client.query(pgSql, params);
+    return result.rows;
+  }
+
+  /**
+   * INSERT/UPDATE/DELETE 실행
+   */
+  async execute(sql: string, params: any[] = []): Promise<{ changes: number }> {
+    if (!this.connected) throw new Error("Not connected to PostgreSQL");
+    const pgSql = this.convertPlaceholders(sql);
+    const result = await this.client.query(pgSql, params);
+    return { changes: result.rowCount ?? 0 };
+  }
+
+  /**
+   * 트랜잭션 시작
+   */
+  async begin(isolation: string = "deferred"): Promise<void> {
+    if (!this.connected) throw new Error("Not connected to PostgreSQL");
+    const cmd = isolation === "deferred" ? "BEGIN" : `BEGIN ${isolation.toUpperCase()}`;
+    await this.client.query(cmd);
+  }
+
+  /**
+   * 트랜잭션 커밋
+   */
+  async commit(): Promise<void> {
+    if (!this.connected) throw new Error("Not connected to PostgreSQL");
+    await this.client.query("COMMIT");
+  }
+
+  /**
+   * 트랜잭션 롤백
+   */
+  async rollback(): Promise<void> {
+    if (!this.connected) throw new Error("Not connected to PostgreSQL");
+    await this.client.query("ROLLBACK");
+  }
+
+  /**
+   * 연결 종료
+   */
+  async close(): Promise<void> {
+    if (this.client) {
+      await this.client.end();
+      this.client = null;
+      this.connected = false;
+    }
+  }
+}

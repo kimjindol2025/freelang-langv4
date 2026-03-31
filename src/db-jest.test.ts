@@ -142,4 +142,12 @@ describe("Database Operations", () => {
     expect(error).toBeNull();
     expect(output).toContain("Rollback done");
   });
+
+  it("pg_connect: connection attempt (no server expected)", async () => {
+    const { output, error } = await exec(`
+      var result = pg_connect("localhost", "5432", "postgres", "password", "testdb")
+      println("pg_connect called")
+    `);
+    expect(output).toContain("pg_connect called");
+  });
 });
