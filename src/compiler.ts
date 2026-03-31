@@ -1366,6 +1366,8 @@ export class Compiler {
         "env",
         // HTTP Client (4) - Phase 2
         "http_get", "http_post", "http_post_json", "fetch",
+        // Database (4) - Phase 3
+        "sqlite_open", "sqlite_query", "sqlite_execute", "sqlite_close",
       ];
 
       if (builtins.includes(name)) {

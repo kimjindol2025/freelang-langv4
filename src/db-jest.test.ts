@@ -29,8 +29,8 @@ describe("Database Operations", () => {
   // Clean up test database files
   afterEach(() => {
     try {
-      if (fs.existsSync("/tmp/test_db.db")) {
-        fs.unlinkSync("/tmp/test_db.db");
+      if (fs.existsSync("./test_db.db")) {
+        fs.unlinkSync("./test_db.db");
       }
     } catch {
       // ignore
@@ -39,7 +39,7 @@ describe("Database Operations", () => {
 
   it("sqlite_open: creates or opens database file", async () => {
     const { output, error } = await exec(`
-      var db = sqlite_open("/tmp/test_db.db")
+      var db = sqlite_open("./test_db.db")
       println("DB opened")
     `);
     expect(error).toBeNull();
@@ -48,7 +48,7 @@ describe("Database Operations", () => {
 
   it("sqlite_execute: creates table and inserts data", async () => {
     const { output, error } = await exec(`
-      var db = sqlite_open("/tmp/test_db.db")
+      var db = sqlite_open("./test_db.db")
       var create_result = sqlite_execute(db, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE)", [])
       println("Table created")
       var insert_result = sqlite_execute(db, "INSERT INTO users (name, email) VALUES (?, ?)", ["Alice", "alice@example.com"])
@@ -61,7 +61,7 @@ describe("Database Operations", () => {
 
   it("sqlite_query: retrieves data from table", async () => {
     const { output, error } = await exec(`
-      var db = sqlite_open("/tmp/test_db.db")
+      var db = sqlite_open("./test_db.db")
       sqlite_execute(db, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE)", [])
       sqlite_execute(db, "INSERT INTO users (name, email) VALUES (?, ?)", ["Alice", "alice@example.com"])
       sqlite_execute(db, "INSERT INTO users (name, email) VALUES (?, ?)", ["Bob", "bob@example.com"])
@@ -74,7 +74,7 @@ describe("Database Operations", () => {
 
   it("sqlite_close: closes database", async () => {
     const { output, error } = await exec(`
-      var db = sqlite_open("/tmp/test_db.db")
+      var db = sqlite_open("./test_db.db")
       sqlite_close(db)
       println("DB closed")
     `);
@@ -93,7 +93,7 @@ describe("Database Operations", () => {
 
   it("sqlite_execute: returns ok result", async () => {
     const { output, error } = await exec(`
-      var db = sqlite_open("/tmp/test_db.db")
+      var db = sqlite_open("./test_db.db")
       sqlite_execute(db, "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)", [])
       var result = sqlite_execute(db, "INSERT INTO items (name) VALUES (?)", ["Item1"])
       println("Executed")
@@ -104,7 +104,7 @@ describe("Database Operations", () => {
 
   it("sqlite_query: multiple rows", async () => {
     const { output, error } = await exec(`
-      var db = sqlite_open("/tmp/test_db.db")
+      var db = sqlite_open("./test_db.db")
       sqlite_execute(db, "CREATE TABLE IF NOT EXISTS people (id INTEGER PRIMARY KEY, name TEXT)", [])
       sqlite_execute(db, "INSERT INTO people (name) VALUES (?)", ["Alice"])
       sqlite_execute(db, "INSERT INTO people (name) VALUES (?)", ["Bob"])
