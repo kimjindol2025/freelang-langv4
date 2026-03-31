@@ -496,7 +496,12 @@ export class Lexer {
   }
 
   private isAlpha(ch: string): boolean {
-    return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch === "_";
+    if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch === "_") {
+      return true;
+    }
+    // 한글 지원: U+AC00 ~ U+D7A3 (가 ~ 힣)
+    const code = ch.charCodeAt(0);
+    return code >= 0xAC00 && code <= 0xD7A3;
   }
 
   private isDigit(ch: string): boolean {
