@@ -399,7 +399,7 @@ export class MigrationManager {
     const files = fs.readdirSync(this.migrationsDir).sort();
 
     for (const file of files) {
-      if (!file.endsWith(".sql")) continue;
+      if (!file.endsWith(".sql") || file.endsWith(".down.sql")) continue;
 
       const applied = await this.db.queryOne(
         "SELECT * FROM _migrations WHERE name = ?",
@@ -445,6 +445,63 @@ export class MigrationManager {
     return await this.db.query(
       "SELECT * FROM _migrations ORDER BY applied_at"
     );
+  }
+
+  /**
+   * 마이그레이션 롤백 (역순 실행)
+   */
+  async down(): Promise<void> {
+    await this.init();
+
+    if (!fs.existsSync(this.migrationsDir)) {
+      console.log("마이그레이션 디렉토리가 없습니다");
+      return;
+    }
+
+    const files = fs.readdirSync(this.migrationsDir)
+      .filter(f => f.endsWith(".sql"))
+      .sort()
+      .reverse();
+
+    for (const file of files) {
+      const downFile = file.replace(".sql", ".down.sql");
+      const downPath = path.join(this.migrationsDir, downFile);
+
+      if (!fs.existsSync(downPath)) {
+        console.log(`⊘ 건너뜀: ${file} (롤백 파일 없음)`);
+        continue;
+      }
+
+      const applied = await this.db.queryOne(
+        "SELECT * FROM _migrations WHERE name = ?",
+        [file]
+      );
+
+      if (!applied) {
+        console.log(`⊘ 건너뜀: ${file} (미적용)`);
+        continue;
+      }
+
+      const sql = fs.readFileSync(downPath, "utf-8");
+
+      try {
+        const statements = sql.split(";").filter((s) => s.trim());
+        for (const stmt of statements) {
+          if (stmt.trim()) {
+            await this.db.execute(stmt);
+          }
+        }
+
+        await this.db.execute(
+          "DELETE FROM _migrations WHERE name = ?",
+          [file]
+        );
+        console.log(`✓ 롤백: ${file}`);
+      } catch (e: any) {
+        console.error(`✗ 실패: ${file} - ${e.message}`);
+        throw e;
+      }
+    }
   }
 }
 

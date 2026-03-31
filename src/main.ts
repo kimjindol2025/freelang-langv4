@@ -9,6 +9,7 @@ import { Compiler } from "./compiler";
 import { VM } from "./vm";
 import { IRGen } from "./ir-gen";
 import { REPL } from "./repl";
+import { SQLiteDB, MigrationManager } from "./db";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -26,6 +27,51 @@ async function main(): Promise<void> {
     return;
   }
 
+  // 마이그레이션 CLI
+  if (args[0] === "migrate") {
+    const cmd = args[1];
+    const dbPath = args[2] || "./app.db";
+    const migrationsDir = args[3] || "./migrations";
+
+    const db = new SQLiteDB(dbPath);
+    const manager = new MigrationManager(db, migrationsDir);
+
+    try {
+      if (cmd === "up") {
+        await db.init();
+        await manager.up();
+        await db.close();
+      } else if (cmd === "down") {
+        await db.init();
+        await manager.down();
+        await db.close();
+      } else if (cmd === "status") {
+        await db.init();
+        const rows = await manager.status();
+        if (rows.length === 0) {
+          console.log("적용된 마이그레이션이 없습니다.");
+        } else {
+          console.log("적용된 마이그레이션:");
+          for (const row of rows) {
+            console.log(`  - ${row.name} (${row.applied_at})`);
+          }
+        }
+        await db.close();
+      } else {
+        console.error(`unknown migrate command: ${cmd}`);
+        console.log("Usage:");
+        console.log("  freelang migrate up [db_path] [migrations_dir]");
+        console.log("  freelang migrate down [db_path] [migrations_dir]");
+        console.log("  freelang migrate status [db_path] [migrations_dir]");
+        process.exit(1);
+      }
+    } catch (e: any) {
+      console.error(`migrate error: ${e.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
   // 도움말
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     console.log("🦁 FreeLang v4.1 — AI-First Programming Language");
@@ -33,6 +79,7 @@ async function main(): Promise<void> {
     console.log("Usage:");
     console.log("  freelang <file.fl> [options]  파일 실행");
     console.log("  freelang --repl               대화형 쉘 시작");
+    console.log("  freelang migrate <cmd> [args] 마이그레이션 관리");
     console.log("");
     console.log("Options:");
     console.log("  --no-check   타입 체크 건너뛰기");
