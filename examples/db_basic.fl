@@ -1,0 +1,46 @@
+// FreeLang v4.2 예제: SQLite 기본 사용법
+
+println("🗄️  SQLite 데이터베이스 예제")
+println("")
+
+// 데이터베이스 열기 (또는 생성)
+// var db = sqlite_open("data.db")
+
+// 테이블 생성
+// db.execute("
+//   CREATE TABLE IF NOT EXISTS users (
+//     id INTEGER PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     email TEXT UNIQUE,
+//     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+//   )
+// ")
+
+// INSERT
+// db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Alice", "alice@example.com"])
+// db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Bob", "bob@example.com"])
+
+// SELECT
+// var users = db.query("SELECT * FROM users")
+// 
+// for user in users {
+//   println("User: " + user.name + " (" + user.email + ")")
+// }
+
+// UPDATE
+// db.execute("UPDATE users SET email = ? WHERE name = ?", ["alice.new@example.com", "Alice"])
+
+// DELETE
+// db.execute("DELETE FROM users WHERE name = ?", ["Bob"])
+
+// 트랜잭션
+// db.transaction(fn() {
+//   db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Charlie", "charlie@example.com"])
+//   db.execute("INSERT INTO users (name, email) VALUES (?, ?)", ["Diana", "diana@example.com"])
+// })
+
+// 연결 종료
+// db.close()
+
+println("✓ 데이터베이스 사용 준비 완료!")
+println("  (구현 진행 중)")
