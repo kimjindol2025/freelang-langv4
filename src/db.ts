@@ -538,3 +538,82 @@ export class PostgreSQLDB implements DBAdapter {
     }
   }
 }
+
+/**
+ * MySQL 데이터베이스 구현 (mysql2/promise 드라이버 기반)
+ */
+export class MySQLDB implements DBAdapter {
+  private conn: any = null;
+  private connected: boolean = false;
+  readonly driverName = "mysql";
+
+  constructor(private config: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    database: string;
+  }) {}
+
+  /**
+   * 연결 초기화
+   */
+  async connect(): Promise<void> {
+    const mysql = require("mysql2/promise");
+    this.conn = await mysql.createConnection(this.config);
+    this.connected = true;
+  }
+
+  /**
+   * SELECT 쿼리 실행
+   */
+  async query(sql: string, params: any[] = []): Promise<Row[]> {
+    if (!this.connected) throw new Error("Not connected to MySQL");
+    const [rows] = await this.conn.query(sql, params);
+    return rows as Row[];
+  }
+
+  /**
+   * INSERT/UPDATE/DELETE 실행
+   */
+  async execute(sql: string, params: any[] = []): Promise<{ changes: number }> {
+    if (!this.connected) throw new Error("Not connected to MySQL");
+    const [result] = await this.conn.execute(sql, params) as any;
+    return { changes: result.affectedRows ?? 0 };
+  }
+
+  /**
+   * 트랜잭션 시작
+   */
+  async begin(isolation: string = "deferred"): Promise<void> {
+    if (!this.connected) throw new Error("Not connected to MySQL");
+    await this.conn.beginTransaction();
+  }
+
+  /**
+   * 트랜잭션 커밋
+   */
+  async commit(): Promise<void> {
+    if (!this.connected) throw new Error("Not connected to MySQL");
+    await this.conn.commit();
+  }
+
+  /**
+   * 트랜잭션 롤백
+   */
+  async rollback(): Promise<void> {
+    if (!this.connected) throw new Error("Not connected to MySQL");
+    await this.conn.rollback();
+  }
+
+  /**
+   * 연결 종료
+   */
+  async close(): Promise<void> {
+    if (this.conn) {
+      await this.conn.end();
+      this.conn = null;
+      this.connected = false;
+    }
+  }
+}

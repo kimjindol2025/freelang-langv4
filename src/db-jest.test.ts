@@ -150,4 +150,12 @@ describe("Database Operations", () => {
     `);
     expect(output).toContain("pg_connect called");
   });
+
+  it("mysql_connect: connection attempt (no server expected)", async () => {
+    const { output, error } = await exec(`
+      var result = mysql_connect("localhost", "3306", "root", "password", "testdb")
+      println("mysql_connect called")
+    `);
+    expect(output).toContain("mysql_connect called");
+  });
 });
