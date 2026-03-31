@@ -1,0 +1,33 @@
+// FreeLang v4.1 예제 4: 파일 I/O
+
+println("📝 파일 처리 예제")
+println("")
+
+// 파일 경로 (임시)
+var temp_file = "/tmp/freelang_test.txt"
+
+// 1. 파일 쓰기
+println("1️⃣ 파일 쓰기...")
+var write_result = write_file(temp_file, "Hello, FreeLang!\nLine 2\nLine 3")
+
+match write_result {
+  Ok(_) => println("✓ 파일 생성 완료"),
+  Err(msg) => println("❌ 쓰기 실패: " + msg),
+}
+
+println("")
+
+// 2. 파일 읽기
+println("2️⃣ 파일 읽기...")
+var read_result = read_file(temp_file)
+
+match read_result {
+  Ok(content) => {
+    println("✓ 읽기 완료:")
+    println(content)
+  },
+  Err(msg) => println("❌ 읽기 실패: " + msg),
+}
+
+println("")
+println("완료!")

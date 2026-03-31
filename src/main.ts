@@ -8,20 +8,39 @@ import { TypeChecker } from "./checker";
 import { Compiler } from "./compiler";
 import { VM } from "./vm";
 import { IRGen } from "./ir-gen";
+import { REPL } from "./repl";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  if (args.length === 0 || args[0] === "--help") {
-    console.log("FreeLang v4 — AI-First Programming Language");
-    console.log("Usage: freelang <file.fl> [options]");
+  // 버전 확인
+  if (args[0] === "--version" || args[0] === "-v") {
+    console.log("FreeLang 4.1.0");
+    process.exit(0);
+  }
+
+  // REPL 모드
+  if (args[0] === "--repl" || args[0] === "-i") {
+    const repl = new REPL();
+    await repl.start();
+    return;
+  }
+
+  // 도움말
+  if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+    console.log("🦁 FreeLang v4.1 — AI-First Programming Language");
+    console.log("");
+    console.log("Usage:");
+    console.log("  freelang <file.fl> [options]  파일 실행");
+    console.log("  freelang --repl               대화형 쉘 시작");
     console.log("");
     console.log("Options:");
     console.log("  --no-check   타입 체크 건너뛰기");
     console.log("  --dump-bc    바이트코드 덤프");
     console.log("  --dump-ir    IR(중간 표현) 덤프");
     console.log("  --use-ir     IR 경로로 컴파일");
-    console.log("  --help       도움말");
+    console.log("  --help, -h   도움말 표시");
+    console.log("  --version    버전 표시");
     process.exit(0);
   }
 

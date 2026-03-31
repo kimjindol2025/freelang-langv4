@@ -1,0 +1,21 @@
+// FreeLang v4.1 예제 3: HTTP 클라이언트 (네트워크)
+
+println("🌐 HTTP 요청 테스트")
+println("")
+
+// GET 요청
+println("1️⃣ GET 요청 시작...")
+var result = http_get("https://httpbin.org/status/200")
+
+match result {
+  Ok(body) => {
+    println("✓ 성공!")
+    println("응답: " + body)
+  },
+  Err(msg) => {
+    println("❌ 실패: " + msg)
+  },
+}
+
+println("")
+println("완료!")

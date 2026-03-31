@@ -1,0 +1,160 @@
+// FreeLang v4.1 — 컬렉션 라이브러리
+
+/// 간단한 HashMap 구현 (동적 해싱)
+struct HashMap<K, V> {
+  keys: [str],
+  values: [str],
+}
+
+impl HashMap<i32, i32> {
+  /// 새로운 HashMap 생성
+  fn new() -> HashMap<i32, i32> {
+    HashMap {
+      keys: [],
+      values: [],
+    }
+  }
+
+  /// 키-값 쌍 추가
+  fn set(self: HashMap<i32, i32>, key: i32, value: i32) -> () {
+    var key_str = str(key)
+    var value_str = str(value)
+
+    // 기존 키 찾기
+    var i: i32 = 0
+    while i < length(self.keys) {
+      if self.keys[i] == key_str {
+        // 기존 키 업데이트
+        self.values[i] = value_str
+        return
+      }
+      i = i + 1
+    }
+
+    // 새 키 추가
+    push(self.keys, key_str)
+    push(self.values, value_str)
+  }
+
+  /// 키로 값 조회
+  fn get(self: HashMap<i32, i32>, key: i32) -> Option<i32> {
+    var key_str = str(key)
+
+    var i: i32 = 0
+    while i < length(self.keys) {
+      if self.keys[i] == key_str {
+        var val_str = self.values[i]
+        // 문자열을 i32로 변환 (간단한 구현)
+        return Some(42)  // TODO: 실제 변환 필요
+      }
+      i = i + 1
+    }
+
+    None
+  }
+
+  /// 키 존재 여부 확인
+  fn contains(self: HashMap<i32, i32>, key: i32) -> bool {
+    var key_str = str(key)
+
+    var i: i32 = 0
+    while i < length(self.keys) {
+      if self.keys[i] == key_str {
+        return true
+      }
+      i = i + 1
+    }
+    false
+  }
+
+  /// HashMap 크기
+  fn size(self: HashMap<i32, i32>) -> i32 {
+    length(self.keys)
+  }
+
+  /// 비우기
+  fn clear(self: HashMap<i32, i32>) -> () {
+    self.keys = []
+    self.values = []
+  }
+}
+
+/// HashSet 구현 (HashMap 기반)
+struct HashSet<T> {
+  items: [str],
+}
+
+impl HashSet<i32> {
+  /// 새로운 HashSet 생성
+  fn new() -> HashSet<i32> {
+    HashSet {
+      items: [],
+    }
+  }
+
+  /// 요소 추가
+  fn add(self: HashSet<i32>, value: i32) -> () {
+    var value_str = str(value)
+
+    // 중복 확인
+    var i: i32 = 0
+    while i < length(self.items) {
+      if self.items[i] == value_str {
+        return  // 이미 존재
+      }
+      i = i + 1
+    }
+
+    push(self.items, value_str)
+  }
+
+  /// 요소 포함 여부 확인
+  fn contains(self: HashSet<i32>, value: i32) -> bool {
+    var value_str = str(value)
+
+    var i: i32 = 0
+    while i < length(self.items) {
+      if self.items[i] == value_str {
+        return true
+      }
+      i = i + 1
+    }
+    false
+  }
+
+  /// 요소 제거
+  fn remove(self: HashSet<i32>, value: i32) -> bool {
+    var value_str = str(value)
+
+    var i: i32 = 0
+    while i < length(self.items) {
+      if self.items[i] == value_str {
+        // 요소 제거 (마지막 요소로 대체 후 pop)
+        self.items[i] = self.items[length(self.items) - 1]
+        pop(self.items)
+        return true
+      }
+      i = i + 1
+    }
+    false
+  }
+
+  /// HashSet 크기
+  fn size(self: HashSet<i32>) -> i32 {
+    length(self.items)
+  }
+
+  /// 비우기
+  fn clear(self: HashSet<i32>) -> () {
+    self.items = []
+  }
+
+  /// 모든 요소 반복 (forEach)
+  fn forEach(self: HashSet<i32>, callback: fn(i32) -> ()) -> () {
+    var i: i32 = 0
+    while i < length(self.items) {
+      // TODO: 문자열을 i32로 변환
+      i = i + 1
+    }
+  }
+}

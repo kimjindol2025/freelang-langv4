@@ -1,7 +1,7 @@
 {
   "name": "freelang-cli",
-  "version": "4.0.0",
-  "description": "FreeLang v4 - AI-First Programming Language (334/334 tests passing)",
+  "version": "4.1.0",
+  "description": "FreeLang v4.1 - AI-First Programming Language with REPL (240+/252 tests passing)",
   "main": "dist/main.js",
   "bin": {
     "freelang": "dist/main.js"

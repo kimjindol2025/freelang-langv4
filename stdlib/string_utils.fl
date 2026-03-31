@@ -1,0 +1,134 @@
+// FreeLang v4.1 — 문자열 유틸리티
+
+/// 문자열이 특정 접두사로 시작하는지 확인
+fn startsWith(s: str, prefix: str) -> bool {
+  var s_len = length(s)
+  var prefix_len = length(prefix)
+
+  if prefix_len > s_len {
+    return false
+  }
+
+  var i: i32 = 0
+  while i < prefix_len {
+    if char_at(s, i) != char_at(prefix, i) {
+      return false
+    }
+    i = i + 1
+  }
+  true
+}
+
+/// 문자열이 특정 접미사로 끝나는지 확인
+fn endsWith(s: str, suffix: str) -> bool {
+  var s_len = length(s)
+  var suffix_len = length(suffix)
+
+  if suffix_len > s_len {
+    return false
+  }
+
+  var i: i32 = 0
+  while i < suffix_len {
+    if char_at(s, s_len - suffix_len + i) != char_at(suffix, i) {
+      return false
+    }
+    i = i + 1
+  }
+  true
+}
+
+/// 문자열 배열을 구분자로 연결
+fn join(arr: [str], sep: str) -> str {
+  if length(arr) == 0 {
+    return ""
+  }
+
+  var result = arr[0]
+  var i: i32 = 1
+  while i < length(arr) {
+    result = result + sep + arr[i]
+    i = i + 1
+  }
+  result
+}
+
+/// 문자열 반복
+fn repeat(s: str, count: i32) -> str {
+  var result = ""
+  var i: i32 = 0
+  while i < count {
+    result = result + s
+    i = i + 1
+  }
+  result
+}
+
+/// 문자열에서 공백 제거 (이미 있는 trim 외 추가)
+fn ltrim(s: str) -> str {
+  var i: i32 = 0
+  while i < length(s) {
+    var c = char_at(s, i)
+    if c != " " && c != "\t" && c != "\n" && c != "\r" {
+      break
+    }
+    i = i + 1
+  }
+
+  if i == 0 {
+    return s
+  }
+
+  var result = ""
+  while i < length(s) {
+    result = result + char_at(s, i)
+    i = i + 1
+  }
+  result
+}
+
+/// 오른쪽 공백 제거
+fn rtrim(s: str) -> str {
+  var i: i32 = length(s) - 1
+  while i >= 0 {
+    var c = char_at(s, i)
+    if c != " " && c != "\t" && c != "\n" && c != "\r" {
+      break
+    }
+    i = i - 1
+  }
+
+  if i == length(s) - 1 {
+    return s
+  }
+
+  var result = ""
+  var j: i32 = 0
+  while j <= i {
+    result = result + char_at(s, j)
+    j = j + 1
+  }
+  result
+}
+
+/// 부분 문자열 (from ~ to)
+fn substring(s: str, from: i32, to: i32) -> str {
+  var result = ""
+  var i: i32 = from
+  while i < to && i < length(s) {
+    result = result + char_at(s, i)
+    i = i + 1
+  }
+  result
+}
+
+/// 문자열 뒤집기
+fn reverse(s: str) -> str {
+  var result = ""
+  var i: i32 = length(s) - 1
+  while i >= 0 {
+    result = result + char_at(s, i)
+    i = i - 1
+  }
+  result
+}

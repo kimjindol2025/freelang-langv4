@@ -1,0 +1,78 @@
+// FreeLang v4.1 예제 5: 고급 기능 (구조체 + 패턴 매칭)
+
+// 구조체 정의
+struct Point {
+  x: f64,
+  y: f64,
+}
+
+println("🚀 고급 기능 데모")
+println("")
+
+// 1. 배열 처리
+println("1️⃣ 배열 합계")
+var nums = [10, 20, 30, 40, 50]
+var total: i32 = 0
+var i: i32 = 0
+while i < length(nums) {
+  total = total + nums[i]
+  i = i + 1
+}
+println("합계: " + str(total))
+
+println("")
+
+// 2. 구조체 생성 및 접근
+println("2️⃣ 구조체 사용")
+var p = Point { x: 3.0, y: 4.0 }
+println("점: (" + str(p.x) + ", " + str(p.y) + ")")
+
+// 거리 계산 (sqrt 함수 사용)
+var dist = sqrt(p.x * p.x + p.y * p.y)
+println("원점으로부터 거리: " + str(dist))
+
+println("")
+
+// 3. 패턴 매칭과 가드 절
+println("3️⃣ 패턴 매칭")
+var x: i32 = 10
+
+match x {
+  y if y < 5 => println("작은 수"),
+  y if y < 15 => println("중간 수"),
+  y if y >= 15 => println("큰 수"),
+}
+
+println("")
+
+// 4. 함수 정의와 호출
+println("4️⃣ 함수와 재귀")
+
+fn factorial(n: i32) -> i32 {
+  if n <= 1 {
+    return 1
+  }
+  n * factorial(n - 1)
+}
+
+println("5! = " + str(factorial(5)))
+println("10! = " + str(factorial(10)))
+
+println("")
+
+// 5. 문자열 배열 처리
+println("5️⃣ 문자열 처리")
+var words = ["Hello", "FreeLang", "v4.1"]
+var msg = ""
+var j: i32 = 0
+while j < length(words) {
+  if j > 0 {
+    msg = msg + " "
+  }
+  msg = msg + words[j]
+  j = j + 1
+}
+println("결합된 문자열: " + msg)
+
+println("")
+println("✓ 모든 예제 완료!")

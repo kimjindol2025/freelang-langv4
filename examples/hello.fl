@@ -1,1 +1,14 @@
-println("Hello, FreeLang v4!")
+// FreeLang v4.1 예제 1: Hello World
+
+println("🦁 FreeLang v4.1에 오신 것을 환영합니다!")
+println("")
+
+var name = "세계"
+println("Hello, " + name + "!")
+
+// 반복
+var i: i32 = 0
+while i < 3 {
+  println("  → 라인 " + str(i + 1))
+  i = i + 1
+}
