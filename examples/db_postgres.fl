@@ -1,0 +1,93 @@
+// FreeLang v4.2 — PostgreSQL 연결 예제
+// PG 데이터베이스 연결 및 에러 처리
+
+fn main() {
+  println("PostgreSQL 연결 시도...")
+
+  // PostgreSQL 연결 (실제 서버 필요)
+  // 로컬: localhost, 포트 5432
+  // 기본 사용자: postgres
+  // 기본 암호: postgres
+  var db_result = pg_connect("localhost", "5432", "postgres", "password", "testdb")
+
+  match db_result {
+    Ok(db) => {
+      println("✓ PostgreSQL 연결 성공!")
+
+      // 테이블 생성
+      var create_result = pg_execute(db,
+        "CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          email VARCHAR(100) UNIQUE,
+          age INTEGER
+        )", []
+      )
+
+      match create_result {
+        Ok(result) => println("✓ 테이블 생성 완료")
+        Err(err) => println("✗ 테이블 생성 실패: " + err)
+      }
+
+      // 데이터 삽입
+      var insert_result = pg_execute(db,
+        "INSERT INTO users (name, email, age) VALUES ($1, $2, $3)",
+        ["Alice", "alice@example.com", 28]
+      )
+
+      match insert_result {
+        Ok(result) => println("✓ 데이터 삽입 완료")
+        Err(err) => println("✗ 데이터 삽입 실패: " + err)
+      }
+
+      // 데이터 조회
+      var query_result = pg_query(db,
+        "SELECT * FROM users WHERE age > $1 ORDER BY age DESC",
+        [25]
+      )
+
+      match query_result {
+        Ok(rows) => {
+          println("✓ 데이터 조회 완료:")
+          println(rows)
+        }
+        Err(err) => println("✗ 데이터 조회 실패: " + err)
+      }
+
+      // 트랜잭션 예제
+      println("")
+      println("트랜잭션 시작...")
+
+      pg_begin(db, "immediate")
+
+      var update_result = pg_execute(db,
+        "UPDATE users SET age = age + 1 WHERE name = $1",
+        ["Alice"]
+      )
+
+      match update_result {
+        Ok(result) => {
+          println("✓ 업데이트 완료")
+          pg_commit(db)
+          println("✓ 트랜잭션 커밋")
+        }
+        Err(err) => {
+          println("✗ 업데이트 실패: " + err)
+          pg_rollback(db)
+          println("✓ 트랜잭션 롤백")
+        }
+      }
+
+      // 연결 종료
+      pg_close(db)
+      println("✓ PostgreSQL 연결 종료")
+    }
+    Err(err) => {
+      println("✗ 연결 실패: " + err)
+      println("로컬 PostgreSQL 서버가 실행 중인지 확인하세요:")
+      println("  Linux: sudo systemctl start postgresql")
+      println("  macOS: brew services start postgresql")
+      println("  Docker: docker run -d -p 5432:5432 postgres:latest")
+    }
+  }
+}

@@ -1,0 +1,107 @@
+// FreeLang v4.2 — 데이터베이스 쿼리 빌더 예제
+// 조건부 쿼리로 데이터베이스 검색
+
+import "stdlib:db_orm"
+
+fn main() {
+  // 데이터베이스 열기
+  var db = sqlite_open("./examples_db.db")
+
+  // 테이블 생성
+  var create_result = sqlite_execute(db,
+    "CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      price REAL NOT NULL,
+      category TEXT,
+      stock INTEGER
+    )", []
+  )
+
+  println("테이블 생성 완료")
+
+  // 샘플 데이터 삽입
+  sqlite_execute(db, "INSERT INTO products (name, price, category, stock) VALUES (?, ?, ?, ?)",
+    ["노트북", 1200000, "전자제품", 5]
+  )
+
+  sqlite_execute(db, "INSERT INTO products (name, price, category, stock) VALUES (?, ?, ?, ?)",
+    ["마우스", 30000, "전자제품", 15]
+  )
+
+  sqlite_execute(db, "INSERT INTO products (name, price, category, stock) VALUES (?, ?, ?, ?)",
+    ["책", 15000, "도서", 8]
+  )
+
+  println("샘플 데이터 삽입 완료")
+
+  // 모든 상품 조회
+  var all_result = sqlite_query(db, "SELECT * FROM products", [])
+  match all_result {
+    Ok(rows) => {
+      println("모든 상품:")
+      println(rows)
+    }
+    Err(err) => println("오류: " + err)
+  }
+
+  // 가격이 50000 이상인 상품 조회
+  var expensive = sqlite_query(db,
+    "SELECT * FROM products WHERE price >= ? ORDER BY price DESC",
+    [50000]
+  )
+  match expensive {
+    Ok(rows) => {
+      println("50000원 이상 상품:")
+      println(rows)
+    }
+    Err(err) => println("오류: " + err)
+  }
+
+  // 전자제품 카테고리만 조회
+  var electronics = sqlite_query(db,
+    "SELECT * FROM products WHERE category = ? ORDER BY stock DESC",
+    ["전자제품"]
+  )
+  match electronics {
+    Ok(rows) => {
+      println("전자제품:")
+      println(rows)
+    }
+    Err(err) => println("오류: " + err)
+  }
+
+  // 재고가 부족한 상품 (10개 미만)
+  var low_stock = sqlite_query(db,
+    "SELECT id, name, stock FROM products WHERE stock < ? ORDER BY stock ASC",
+    [10]
+  )
+  match low_stock {
+    Ok(rows) => {
+      println("재고 부족 상품:")
+      println(rows)
+    }
+    Err(err) => println("오류: " + err)
+  }
+
+  // 상품 개수
+  var count_result = sqlite_query(db, "SELECT COUNT(*) as cnt FROM products", [])
+  match count_result {
+    Ok(rows) => {
+      println("전체 상품 개수:")
+      println(rows)
+    }
+    Err(err) => println("오류: " + err)
+  }
+
+  // 마우스 가격 업데이트
+  var update_result = sqlite_execute(db,
+    "UPDATE products SET price = ? WHERE name = ?",
+    [35000, "마우스"]
+  )
+  println("마우스 가격 업데이트 완료")
+
+  // 데이터베이스 종료
+  sqlite_close(db)
+  println("데이터베이스 종료")
+}

@@ -1,0 +1,64 @@
+// FreeLang v4.2 — 마이그레이션 패턴 예제
+// 명령줄 도구로 마이그레이션 관리
+
+fn main() {
+  println("FreeLang v4.2 — 마이그레이션 관리 가이드")
+  println("")
+
+  println("마이그레이션 파일 구조:")
+  println("  migrations/")
+  println("    001_create_users.sql")
+  println("    001_create_users.down.sql")
+  println("    002_add_email.sql")
+  println("    002_add_email.down.sql")
+  println("")
+
+  println("마이그레이션 샘플 (001_create_users.sql):")
+  println("  CREATE TABLE users (")
+  println("    id INTEGER PRIMARY KEY,")
+  println("    name TEXT NOT NULL,")
+  println("    email TEXT UNIQUE")
+  println("  );")
+  println("")
+
+  println("롤백 샘플 (001_create_users.down.sql):")
+  println("  DROP TABLE IF EXISTS users;")
+  println("")
+
+  println("명령줄 사용 방법:")
+  println("")
+
+  println("1. 마이그레이션 적용:")
+  println("   $ node dist/main.js migrate up ./app.db ./migrations")
+  println("")
+
+  println("2. 마이그레이션 상태 확인:")
+  println("   $ node dist/main.js migrate status ./app.db ./migrations")
+  println("")
+
+  println("3. 마이그레이션 롤백:")
+  println("   $ node dist/main.js migrate down ./app.db ./migrations")
+  println("")
+
+  println("주의사항:")
+  println("  - .down.sql 파일이 없으면 롤백 불가")
+  println("  - 마이그레이션 파일명은 정렬 가능하도록 접두사 사용")
+  println("  - 한 번 적용된 마이그레이션은 수정하지 말 것")
+  println("  - 여러 SQL 문장은 ;로 분리")
+  println("")
+
+  println("프로그래매틱 사용 (FreeLang 코드):")
+  println("")
+
+  println("  var db = sqlite_open(\"./app.db\")")
+  println("  // db를 사용한 작업...")
+  println("  sqlite_close(db)")
+  println("")
+
+  println("마이그레이션 시스템 특징:")
+  println("  ✓ SQLite, PostgreSQL, MySQL 지원")
+  println("  ✓ 트랜잭션 기반 안전성")
+  println("  ✓ 자동 상태 추적")
+  println("  ✓ 롤백 지원")
+  println("  ✓ CLI 및 API 모두 지원")
+}
