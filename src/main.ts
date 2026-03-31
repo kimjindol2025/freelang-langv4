@@ -9,7 +9,7 @@ import { Compiler } from "./compiler";
 import { VM } from "./vm";
 import { IRGen } from "./ir-gen";
 
-function main(): void {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args[0] === "--help") {
@@ -92,7 +92,7 @@ function main(): void {
   }
 
   // 5. VM 실행
-  const { output, error } = new VM().run(chunk);
+  const { output, error } = await new VM().run(chunk);
 
   for (const line of output) {
     console.log(line);
@@ -104,4 +104,4 @@ function main(): void {
   }
 }
 
-main();
+main().catch(console.error);

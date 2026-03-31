@@ -1,4 +1,0 @@
-// Simple HTTP GET test - version 2
-var result = http_get("https://httpbin.org/status/200")
-println(typeof(result))
-println(result)

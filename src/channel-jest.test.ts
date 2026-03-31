@@ -6,7 +6,7 @@ import { TypeChecker } from "./checker";
 import { Compiler } from "./compiler";
 import { VM } from "./vm";
 
-function runCode(code: string): string[] {
+async function runCode(code: string): Promise<string[]> {
   const lexer = new Lexer(code);
   const { tokens, errors: lexErrors } = lexer.tokenize();
   if (lexErrors.length > 0) {
@@ -29,7 +29,7 @@ function runCode(code: string): string[] {
   const bytecode = compiler.compile(program);
 
   const vm = new VM();
-  const { output, error } = vm.run(bytecode);
+  const { output, error } = await vm.run(bytecode);
   if (error) {
     throw new Error(`Runtime error: ${error}`);
   }
@@ -38,17 +38,17 @@ function runCode(code: string): string[] {
 
 describe("Channel/Actor 기본 테스트", () => {
   // 테스트 1: 채널 생성
-  test("T1: 채널 생성 (chan_new)", () => {
+  test("T1: 채널 생성 (chan_new)", async () => {
     const code = `
       var ch = channel<i32>();
       println(str(1));
     `;
-    const output = runCode(code);
+    const output = await runCode(code);
     expect(output).toContain("1");
   });
 
   // 테스트 2: 채널 송수신 (기본)
-  test("T2: 채널 송수신 (spawn에서 송신, 메인에서 수신)", () => {
+  test("T2: 채널 송수신 (spawn에서 송신, 메인에서 수신)", async () => {
     const code = `
       var ch = channel<i32>();
 
@@ -59,12 +59,12 @@ describe("Channel/Actor 기본 테스트", () => {
       var x = <- ch;
       println(str(x));
     `;
-    const output = runCode(code);
+    const output = await runCode(code);
     expect(output).toContain("42");
   });
 
   // 테스트 3: 다중 메시지
-  test("T3: 채널을 통한 다중 메시지 송수신", () => {
+  test("T3: 채널을 통한 다중 메시지 송수신", async () => {
     const code = `
       var ch = channel<i32>();
 
@@ -81,14 +81,14 @@ describe("Channel/Actor 기본 테스트", () => {
       println(str(b));
       println(str(c));
     `;
-    const output = runCode(code);
+    const output = await runCode(code);
     expect(output).toContain("10");
     expect(output).toContain("20");
     expect(output).toContain("30");
   });
 
   // 테스트 4: 다중 Actor (2개)
-  test("T4: 다중 Actor 간 통신 (2 spawns)", () => {
+  test("T4: 다중 Actor 간 통신 (2 spawns)", async () => {
     const code = `
       var ch1 = channel<i32>();
 
@@ -99,21 +99,21 @@ describe("Channel/Actor 기본 테스트", () => {
       var y = <- ch1;
       println(str(y));
     `;
-    const output = runCode(code);
+    const output = await runCode(code);
     expect(output).toContain("100");
   });
 
   // 테스트 5: 채널 타입 체크 (mismatch 감지)
-  test("T5: 채널 타입 미스매치 감지", () => {
+  test("T5: 채널 타입 미스매치 감지", async () => {
     const code = `
       var ch = channel<i32>();
       ch <- "hello";
     `;
-    expect(() => runCode(code)).toThrow();
+    await expect(runCode(code)).rejects.toThrow();
   });
 
   // 테스트 6: Actor 스케줄링 (순서 검증)
-  test("T6: Actor 스케줄링 순서 검증", () => {
+  test("T6: Actor 스케줄링 순서 검증", async () => {
     const code = `
       var ch = channel<i32>();
 
@@ -127,13 +127,13 @@ describe("Channel/Actor 기본 테스트", () => {
       println(str(x));
       println(str(y));
     `;
-    const output = runCode(code);
+    const output = await runCode(code);
     expect(output[0]).toBe("1");
     expect(output[1]).toBe("2");
   });
 
   // 테스트 7: 복잡한 채널 패턴
-  test("T7: 복잡한 채널 패턴 (2개 채널)", () => {
+  test("T7: 복잡한 채널 패턴 (2개 채널)", async () => {
     const code = `
       var ch_a = channel<i32>();
       var ch_b = channel<i32>();
@@ -151,7 +151,7 @@ describe("Channel/Actor 기본 테스트", () => {
       println(str(a));
       println(str(b));
     `;
-    const output = runCode(code);
+    const output = await runCode(code);
     expect(output).toContain("1");
     expect(output).toContain("2");
   });

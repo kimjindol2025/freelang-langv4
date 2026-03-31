@@ -3,7 +3,7 @@
 
 import { Op, Chunk, FuncInfo } from "./compiler";
 import * as crypto from "crypto";
-import request from "sync-request";
+import * as fs from "fs";
 
 // ============================================================
 // Value (SPEC_02 Q3)
@@ -69,7 +69,7 @@ export class VM {
   private instructionCount: number = 0;
   private maxInstructions: number = 1_000_000;
 
-  run(chunk: Chunk): { output: string[]; error: string | null } {
+  async run(chunk: Chunk): Promise<{ output: string[]; error: string | null }> {
     this.chunk = chunk;
     this.output = [];
     this.instructionCount = 0;
@@ -85,7 +85,7 @@ export class VM {
     }];
 
     try {
-      this.schedule();
+      await this.schedule();
       return { output: this.output, error: null };
     } catch (e: any) {
       return { output: this.output, error: e.message || String(e) };
@@ -96,7 +96,7 @@ export class VM {
   // Scheduler — round-robin (SPEC_02 Q7)
   // ============================================================
 
-  private schedule(): void {
+  private async schedule(): Promise<void> {
     const SLICE = 1000;
     let current = 0;
 
@@ -104,7 +104,7 @@ export class VM {
       const actor = this.actors[current];
 
       if (actor.state === "running") {
-        this.runSlice(actor, SLICE);
+        await this.runSlice(actor, SLICE);
       } else if (actor.state === "waiting" && actor.waitingChan !== null) {
         const chan = this.channels.find((c) => c.id === actor.waitingChan);
         if (chan && chan.buffer.length > 0) {
@@ -127,7 +127,7 @@ export class VM {
   // Execute slice
   // ============================================================
 
-  private runSlice(actor: Actor, maxOps: number): void {
+  private async runSlice(actor: Actor, maxOps: number): Promise<void> {
     let ops = 0;
 
     while (ops < maxOps && actor.state === "running") {
@@ -416,7 +416,7 @@ export class VM {
             args.unshift(actor.stack.pop()!);
           }
 
-          const result = this.callBuiltin(name, args);
+          const result = await this.callBuiltin(name, args);
           actor.stack.push(result);
           break;
         }
@@ -584,7 +584,7 @@ export class VM {
   // 내장 함수 (SPEC_10)
   // ============================================================
 
-  private callBuiltin(name: string, args: Value[]): Value {
+  private async callBuiltin(name: string, args: Value[]): Promise<Value> {
     switch (name) {
       case "println": {
         const text = args.map((a) => this.valueToString(a)).join(" ");
@@ -691,12 +691,32 @@ export class VM {
         return { tag: "ok", val: { tag: "i32", val: parseInt(this.valueToString(args[0]), 10) || 0 } };
       case "f64":
         return { tag: "ok", val: { tag: "f64", val: parseFloat(this.valueToString(args[0])) || 0 } };
-      case "read_line":
-        return { tag: "str", val: "" }; // stub
-      case "read_file":
-        return { tag: "err", val: { tag: "str", val: "not implemented" } };
-      case "write_file":
-        return { tag: "err", val: { tag: "str", val: "not implemented" } };
+      case "read_line": {
+        // synchronous readline from stdin (simplified - returns empty for now)
+        // In real implementation, would need async or proper stdin handling
+        return { tag: "str", val: "" };
+      }
+      case "read_file": {
+        const filepath = this.valueToString(args[0]);
+        try {
+          const content = fs.readFileSync(filepath, "utf-8");
+          return { tag: "ok", val: { tag: "str", val: content } };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "unknown error";
+          return { tag: "err", val: { tag: "str", val: errMsg } };
+        }
+      }
+      case "write_file": {
+        const filepath = this.valueToString(args[0]);
+        const content = this.valueToString(args[1]);
+        try {
+          fs.writeFileSync(filepath, content, "utf-8");
+          return { tag: "ok", val: { tag: "void" } };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : "unknown error";
+          return { tag: "err", val: { tag: "str", val: errMsg } };
+        }
+      }
       case "recv":
         // method-style: obj.recv()
         if (args[0] && args[0].tag === "chan") {
@@ -888,9 +908,7 @@ export class VM {
       case "http_get": {
         const url = this.valueToString(args[0]);
         try {
-          // Synchronous fetch simulation using blocking approach
-          // Note: fetch is async, but we return a promise and resolve it immediately
-          const result = this.httpGetSync(url);
+          const result = await this.httpGetAsync(url);
           return result;
         } catch (e) {
           return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
@@ -900,7 +918,7 @@ export class VM {
         const url = this.valueToString(args[0]);
         const body = this.valueToString(args[1]);
         try {
-          const result = this.httpPostSync(url, body);
+          const result = await this.httpPostAsync(url, body);
           return result;
         } catch (e) {
           return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
@@ -910,7 +928,7 @@ export class VM {
         const url = this.valueToString(args[0]);
         const jsonBody = this.valueToString(args[1]);
         try {
-          const result = this.httpPostJsonSync(url, jsonBody);
+          const result = await this.httpPostJsonAsync(url, jsonBody);
           return result;
         } catch (e) {
           return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
@@ -922,7 +940,7 @@ export class VM {
         const headers = args.length > 2 ? args[2] : null;
         const body = args.length > 3 ? this.valueToString(args[3]) : null;
         try {
-          const result = this.fetchSync(url, method, headers, body);
+          const result = await this.fetchAsync(url, method, headers, body);
           return result;
         } catch (e) {
           return { tag: "err", val: { tag: "str", val: `HTTP error: ${String(e)}` } };
@@ -1048,51 +1066,51 @@ export class VM {
   }
 
   // ============================================================
-  // HTTP Client Implementation (Phase 2) — sync-request based
+  // HTTP Client Implementation (Phase 2) — fetch based (async)
   // ============================================================
 
-  private httpGetSync(url: string): Value {
+  private async httpGetAsync(url: string): Promise<Value> {
     try {
-      const response = (request as any)("GET", url, { retry: 0, timeout: 5000 } as any);
-      const body = response.getBody("utf8");
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const body = await res.text();
       return { tag: "ok", val: { tag: "str", val: body } };
     } catch (e: any) {
       return { tag: "err", val: { tag: "str", val: e.message } };
     }
   }
 
-  private httpPostSync(url: string, body: string): Value {
+  private async httpPostAsync(url: string, body: string): Promise<Value> {
     try {
-      const response = (request as any)("POST", url, {
+      const res = await fetch(url, {
+        method: "POST",
         body,
-        retry: 0,
-        timeout: 5000,
-      } as any);
-      const responseBody = response.getBody("utf8");
+        signal: AbortSignal.timeout(5000),
+      });
+      const responseBody = await res.text();
       return { tag: "ok", val: { tag: "str", val: responseBody } };
     } catch (e: any) {
       return { tag: "err", val: { tag: "str", val: e.message } };
     }
   }
 
-  private httpPostJsonSync(url: string, jsonBody: string): Value {
+  private async httpPostJsonAsync(url: string, jsonBody: string): Promise<Value> {
     try {
-      const response = (request as any)("POST", url, {
+      const res = await fetch(url, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: jsonBody,
-        retry: 0,
-        timeout: 5000,
-      } as any);
-      const responseBody = response.getBody("utf8");
+        signal: AbortSignal.timeout(5000),
+      });
+      const responseBody = await res.text();
       return { tag: "ok", val: { tag: "str", val: responseBody } };
     } catch (e: any) {
       return { tag: "err", val: { tag: "str", val: e.message } };
     }
   }
 
-  private fetchSync(url: string, method: string, headers: Value | null, body: string | null): Value {
+  private async fetchAsync(url: string, method: string, headers: Value | null, body: string | null): Promise<Value> {
     try {
-      const options: any = { retry: 0, timeout: 5000 };
+      const options: any = { method, signal: AbortSignal.timeout(5000) };
 
       if (headers && headers.tag === "struct") {
         options.headers = {};
@@ -1105,8 +1123,8 @@ export class VM {
         options.body = body;
       }
 
-      const response = (request as any)(method, url, options);
-      const responseBody = response.getBody("utf8");
+      const res = await fetch(url, options);
+      const responseBody = await res.text();
       return { tag: "ok", val: { tag: "str", val: responseBody } };
     } catch (e: any) {
       return { tag: "err", val: { tag: "str", val: e.message } };
