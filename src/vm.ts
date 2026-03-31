@@ -1017,6 +1017,56 @@ export class VM {
         return { tag: "void" };
       }
 
+      // Transaction builtins
+      case "sqlite_begin": {
+        if (args[0].tag !== "db") {
+          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
+        }
+        const db = this.databases.get(args[0].id);
+        if (!db) {
+          return { tag: "err", val: { tag: "str", val: "database not found" } };
+        }
+        const isolation = args.length > 1 ? this.valueToString(args[1]) : "deferred";
+        try {
+          (db as any).begin(isolation);
+          return { tag: "void" };
+        } catch (e: any) {
+          return { tag: "err", val: { tag: "str", val: e.message } };
+        }
+      }
+
+      case "sqlite_commit": {
+        if (args[0].tag !== "db") {
+          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
+        }
+        const db = this.databases.get(args[0].id);
+        if (!db) {
+          return { tag: "err", val: { tag: "str", val: "database not found" } };
+        }
+        try {
+          (db as any).commit();
+          return { tag: "void" };
+        } catch (e: any) {
+          return { tag: "err", val: { tag: "str", val: e.message } };
+        }
+      }
+
+      case "sqlite_rollback": {
+        if (args[0].tag !== "db") {
+          return { tag: "err", val: { tag: "str", val: "argument must be a database" } };
+        }
+        const db = this.databases.get(args[0].id);
+        if (!db) {
+          return { tag: "err", val: { tag: "str", val: "database not found" } };
+        }
+        try {
+          (db as any).rollback();
+          return { tag: "void" };
+        } catch (e: any) {
+          return { tag: "err", val: { tag: "str", val: e.message } };
+        }
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }

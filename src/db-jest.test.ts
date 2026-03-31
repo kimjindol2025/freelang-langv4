@@ -115,4 +115,31 @@ describe("Database Operations", () => {
     expect(error).toBeNull();
     expect(output).toContain("All rows retrieved");
   });
+
+  it("sqlite_begin/commit: manual transaction", async () => {
+    const { output, error } = await exec(`
+      var db = sqlite_open("./test_db.db")
+      sqlite_execute(db, "CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY, balance INTEGER)", [])
+      sqlite_begin(db, "immediate")
+      sqlite_execute(db, "INSERT INTO accounts (balance) VALUES (?)", ["1000"])
+      sqlite_commit(db)
+      println("Transaction committed")
+    `);
+    expect(error).toBeNull();
+    expect(output).toContain("Transaction committed");
+  });
+
+  it("sqlite_begin/rollback: transaction rollback", async () => {
+    const { output, error } = await exec(`
+      var db = sqlite_open("./test_db.db")
+      sqlite_execute(db, "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, message TEXT)", [])
+      sqlite_begin(db)
+      sqlite_execute(db, "INSERT INTO logs (message) VALUES (?)", ["Before rollback"])
+      sqlite_rollback(db)
+      var count = sqlite_query(db, "SELECT COUNT(*) as cnt FROM logs", [])
+      println("Rollback done")
+    `);
+    expect(error).toBeNull();
+    expect(output).toContain("Rollback done");
+  });
 });

@@ -115,7 +115,10 @@ export class SQLiteDB {
 
     try {
       this.db.run(sql, params);
-      this.save();
+      // 트랜잭션 중에는 저장하지 않음
+      if (!this.inTransaction) {
+        this.save();
+      }
       return { changes: this.db.getRowsModified() };
     } catch (e: any) {
       throw new Error(`Execute error: ${e.message}`);
@@ -147,6 +150,41 @@ export class SQLiteDB {
       this.inTransaction = false;
       throw new Error(`Transaction error: ${e.message}`);
     }
+  }
+
+  /**
+   * 트랜잭션 시작 (수동)
+   */
+  async begin(isolation: "deferred" | "immediate" | "exclusive" = "deferred"): Promise<void> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new Error("Database not initialized");
+
+    const cmd = `BEGIN ${isolation.toUpperCase()}`;
+    this.db.run(cmd);
+    this.inTransaction = true;
+  }
+
+  /**
+   * 트랜잭션 커밋
+   */
+  async commit(): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+    if (!this.inTransaction) throw new Error("No active transaction");
+
+    this.db.run("COMMIT");
+    this.inTransaction = false;
+    this.save();
+  }
+
+  /**
+   * 트랜잭션 롤백
+   */
+  async rollback(): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+    if (!this.inTransaction) throw new Error("No active transaction");
+
+    this.db.run("ROLLBACK");
+    this.inTransaction = false;
   }
 
   /**

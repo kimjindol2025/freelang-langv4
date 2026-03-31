@@ -1595,6 +1595,7 @@ export class TypeChecker {
       case "sqlite_execute":
         return { kind: "result", ok: { kind: "unknown" }, err: { kind: "string" } };
       case "sqlite_close":
+      case "sqlite_begin": case "sqlite_commit": case "sqlite_rollback":
         return { kind: "void" };
 
       default: return null;
