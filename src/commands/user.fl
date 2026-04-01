@@ -1,0 +1,423 @@
+// FreeLang v4.2 — gogs-cli Phase 5 사용자 명령어
+// create, list, view, delete 구현
+// 300라인
+
+/// 사용자 생성 (admin only)
+/// gogs user create USERNAME --email EMAIL --password PASSWORD
+async fn cmd_user_create(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var username = get_positional(args, 0)
+    if username == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Username is required"
+        }
+    }
+
+    // 2. 플래그 파싱
+    var email = get_flag(args, "email")
+    var password = get_flag(args, "password")
+    var admin = has_flag(args, "admin")
+
+    if email == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--email is required"
+        }
+    }
+
+    if password == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--password is required"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Creating user '" + username + "'...")
+
+    var user_service = new_user_service(client, cache)
+    var req = CreateUserRequest {
+        username: username,
+        email: email,
+        password: password,
+        send_notify: false,
+        is_admin: admin
+    }
+    var result = await create_user(user_service, req)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(user) => {
+            var output = ""
+            output = output + "✓ User created\n"
+            output = output + "  Username: " + user.login + "\n"
+            output = output + "  Email:    " + user.email + "\n"
+            output = output + "  Admin:    " + bool_to_str(user.is_admin) + "\n"
+
+            CliResult {
+                exit_code: 0,
+                output: output,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 사용자 목록
+/// gogs user list [--json] [--yaml]
+async fn cmd_user_list(args: CliArgs) -> CliResult {
+    // 1. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 2. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 3. API 호출
+    println("Fetching users...")
+
+    var user_service = new_user_service(client, cache)
+    var result = await list_users(user_service)
+
+    // 4. 결과 처리
+    match result {
+        Result::Ok(users) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return user_list_json(users)
+            }
+            if format == "yaml" {
+                return user_list_yaml(users)
+            }
+
+            user_list_text(users)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 사용자 상세
+/// gogs user view USERNAME [--json] [--yaml]
+async fn cmd_user_view(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var username = get_positional(args, 0)
+    if username == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Username is required"
+        }
+    }
+
+    // 2. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 3. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 4. API 호출
+    println("Fetching user '" + username + "'...")
+
+    var user_service = new_user_service(client, cache)
+    var result = await get_user(user_service, username)
+
+    // 5. 결과 처리
+    match result {
+        Result::Ok(user) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return user_view_json(user)
+            }
+            if format == "yaml" {
+                return user_view_yaml(user)
+            }
+
+            user_view_text(user)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 사용자 삭제
+/// gogs user delete USERNAME [--force]
+async fn cmd_user_delete(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var username = get_positional(args, 0)
+    if username == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Username is required"
+        }
+    }
+
+    // 2. 플래그 확인
+    var force = has_flag(args, "force")
+
+    if !force {
+        println("⚠️  This will permanently delete user '" + username + "'")
+        println("Run with --force to confirm")
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Deletion not confirmed"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Deleting user '" + username + "'...")
+
+    var user_service = new_user_service(client, cache)
+    var result = await delete_user(user_service, username)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(_) => {
+            CliResult {
+                exit_code: 0,
+                output: "✓ User deleted: " + username,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+// ==================== 출력 포맷: 목록 ====================
+
+/// 사용자 목록 - 텍스트
+fn user_list_text(users: [User]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                        User List                                   ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    if length(users) == 0 {
+        output = output + "No users found\n"
+        return CliResult {
+            exit_code: 0,
+            output: output,
+            error: ""
+        }
+    }
+
+    var i: i32 = 0
+    while i < length(users) {
+        var user = users[i]
+        var admin_mark = if user.is_admin then "[A]" else "   "
+        output = output + admin_mark + " " + user.login + "\n"
+        output = output + "     " + user.full_name + " <" + user.email + ">\n"
+        output = output + "     Created: " + user.created_at + "\n"
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "Total: " + str(length(users)) + " users\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+/// 사용자 목록 - JSON
+fn user_list_json(users: [User]) -> CliResult {
+    var json = "[\n"
+
+    var i: i32 = 0
+    while i < length(users) {
+        var user = users[i]
+        json = json + "  {\n"
+        json = json + "    \"login\": \"" + user.login + "\",\n"
+        json = json + "    \"full_name\": \"" + user.full_name + "\",\n"
+        json = json + "    \"email\": \"" + user.email + "\",\n"
+        json = json + "    \"is_admin\": " + bool_to_json(user.is_admin) + ",\n"
+        json = json + "    \"created_at\": \"" + user.created_at + "\"\n"
+        json = json + "  }"
+        if i < length(users) - 1 {
+            json = json + ","
+        }
+        json = json + "\n"
+        i = i + 1
+    }
+
+    json = json + "]\n"
+
+    CliResult {
+        exit_code: 0,
+        output: json,
+        error: ""
+    }
+}
+
+/// 사용자 목록 - YAML
+fn user_list_yaml(users: [User]) -> CliResult {
+    var yaml = "users:\n"
+
+    var i: i32 = 0
+    while i < length(users) {
+        var user = users[i]
+        yaml = yaml + "  - login: " + user.login + "\n"
+        yaml = yaml + "    full_name: " + user.full_name + "\n"
+        yaml = yaml + "    email: " + user.email + "\n"
+        yaml = yaml + "    is_admin: " + bool_to_str(user.is_admin) + "\n"
+        yaml = yaml + "    created_at: " + user.created_at + "\n"
+        i = i + 1
+    }
+
+    CliResult {
+        exit_code: 0,
+        output: yaml,
+        error: ""
+    }
+}
+
+// ==================== 출력 포맷: 상세 ====================
+
+/// 사용자 상세 - 텍스트
+fn user_view_text(user: User) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                       User Details                                 ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+    output = output + "Login:        " + user.login + "\n"
+    output = output + "Full Name:    " + user.full_name + "\n"
+    output = output + "Email:        " + user.email + "\n"
+    output = output + "Admin:        " + bool_to_str(user.is_admin) + "\n"
+    output = output + "Created:      " + user.created_at + "\n"
+    output = output + "Updated:      " + user.updated_at + "\n"
+    output = output + "\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+/// 사용자 상세 - JSON
+fn user_view_json(user: User) -> CliResult {
+    var json = "{\n"
+    json = json + "  \"login\": \"" + user.login + "\",\n"
+    json = json + "  \"full_name\": \"" + user.full_name + "\",\n"
+    json = json + "  \"email\": \"" + user.email + "\",\n"
+    json = json + "  \"is_admin\": " + bool_to_json(user.is_admin) + ",\n"
+    json = json + "  \"created_at\": \"" + user.created_at + "\",\n"
+    json = json + "  \"updated_at\": \"" + user.updated_at + "\"\n"
+    json = json + "}\n"
+
+    CliResult {
+        exit_code: 0,
+        output: json,
+        error: ""
+    }
+}
+
+/// 사용자 상세 - YAML
+fn user_view_yaml(user: User) -> CliResult {
+    var yaml = "login: " + user.login + "\n"
+    yaml = yaml + "full_name: " + user.full_name + "\n"
+    yaml = yaml + "email: " + user.email + "\n"
+    yaml = yaml + "is_admin: " + bool_to_str(user.is_admin) + "\n"
+    yaml = yaml + "created_at: " + user.created_at + "\n"
+    yaml = yaml + "updated_at: " + user.updated_at + "\n"
+
+    CliResult {
+        exit_code: 0,
+        output: yaml,
+        error: ""
+    }
+}
+
+// ==================== 유틸리티 ====================
+
+fn bool_to_str(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+fn bool_to_json(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+// 필요한 함수들:
+// - get_positional, has_flag, get_flag, get_format
+// - get_default_host, new_client, new_cache
+// - new_user_service, create_user, list_users, get_user, delete_user
+// - error_message

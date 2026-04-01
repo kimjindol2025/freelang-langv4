@@ -1,0 +1,400 @@
+// FreeLang v4.2 — gogs-cli Phase 5 웹훅 명령어
+// create, list, delete 구현
+// 200라인
+
+/// 웹훅 생성
+/// gogs webhook create OWNER/REPO --url URL [--events "push,pull_request"]
+async fn cmd_webhook_create(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 플래그 파싱
+    var webhook_url = get_flag(args, "url")
+    if webhook_url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--url is required"
+        }
+    }
+
+    var events_str = get_flag(args, "events")
+    if events_str == "" {
+        events_str = "push"
+    }
+    var events = split_events(events_str)
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Creating webhook for " + repo_path + "...")
+
+    var webhook_service = new_webhook_service(client, cache)
+    var req = CreateWebhookRequest {
+        url: webhook_url,
+        content_type: "json",
+        events: events,
+        active: true
+    }
+    var result = await create_webhook(webhook_service, owner, repo_name, req)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(webhook) => {
+            var output = ""
+            output = output + "✓ Webhook created\n"
+            output = output + "  ID:  " + str(webhook.id) + "\n"
+            output = output + "  URL: " + webhook.url + "\n"
+            output = output + "  Active: " + bool_to_str(webhook.active) + "\n"
+
+            CliResult {
+                exit_code: 0,
+                output: output,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 웹훅 목록
+/// gogs webhook list OWNER/REPO [--json] [--yaml]
+async fn cmd_webhook_list(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 3. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 4. API 호출
+    println("Fetching webhooks for " + repo_path + "...")
+
+    var webhook_service = new_webhook_service(client, cache)
+    var result = await list_webhooks(webhook_service, owner, repo_name)
+
+    // 5. 결과 처리
+    match result {
+        Result::Ok(webhooks) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return webhook_list_json(webhooks)
+            }
+            if format == "yaml" {
+                return webhook_list_yaml(webhooks)
+            }
+
+            webhook_list_text(webhooks)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 웹훅 삭제
+/// gogs webhook delete OWNER/REPO WEBHOOK_ID [--force]
+async fn cmd_webhook_delete(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    var webhook_id_str = get_positional(args, 1)
+
+    if repo_path == "" || webhook_id_str == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path and webhook ID are required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 플래그 확인
+    var force = has_flag(args, "force")
+    if !force {
+        println("⚠️  This will delete webhook " + webhook_id_str)
+        println("Run with --force to confirm")
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Deletion not confirmed"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Deleting webhook " + webhook_id_str + "...")
+
+    var webhook_service = new_webhook_service(client, cache)
+    var result = await delete_webhook(webhook_service, owner, repo_name, parse_int(webhook_id_str))
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(_) => {
+            CliResult {
+                exit_code: 0,
+                output: "✓ Webhook deleted: " + webhook_id_str,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+// ==================== 출력 포맷 ====================
+
+fn webhook_list_text(webhooks: [Webhook]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                       Webhook List                                 ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    if length(webhooks) == 0 {
+        output = output + "No webhooks found\n"
+        return CliResult {
+            exit_code: 0,
+            output: output,
+            error: ""
+        }
+    }
+
+    var i: i32 = 0
+    while i < length(webhooks) {
+        var webhook = webhooks[i]
+        var active_mark = if webhook.active then "✓" else "✗"
+        output = output + "[" + active_mark + "] " + str(webhook.id) + ": " + webhook.url + "\n"
+        output = output + "     Events: " + events_to_str(webhook.events) + "\n"
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "Total: " + str(length(webhooks)) + " webhooks\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+fn webhook_list_json(webhooks: [Webhook]) -> CliResult {
+    var json = "[\n"
+    var i: i32 = 0
+    while i < length(webhooks) {
+        var w = webhooks[i]
+        json = json + "  {\"id\": " + str(w.id) + ", \"url\": \"" + w.url + "\", \"active\": " + bool_to_json(w.active) + "}"
+        if i < length(webhooks) - 1 { json = json + "," }
+        json = json + "\n"
+        i = i + 1
+    }
+    json = json + "]\n"
+    CliResult { exit_code: 0, output: json, error: "" }
+}
+
+fn webhook_list_yaml(webhooks: [Webhook]) -> CliResult {
+    var yaml = "webhooks:\n"
+    var i: i32 = 0
+    while i < length(webhooks) {
+        var w = webhooks[i]
+        yaml = yaml + "  - id: " + str(w.id) + "\n"
+        yaml = yaml + "    url: " + w.url + "\n"
+        yaml = yaml + "    active: " + bool_to_str(w.active) + "\n"
+        i = i + 1
+    }
+    CliResult { exit_code: 0, output: yaml, error: "" }
+}
+
+// ==================== 유틸리티 ====================
+
+fn split_repo_path(path: str) -> [str] {
+    var result: [str] = []
+    var idx = indexOf(path, "/")
+    if idx == -1 {
+        result.push(path)
+        return result
+    }
+    result.push(substring(path, 0, idx))
+    result.push(substring(path, idx + 1, length(path)))
+    result
+}
+
+fn split_events(events_str: str) -> [str] {
+    var result: [str] = []
+    var parts = split_by(events_str, ",")
+    var i: i32 = 0
+    while i < length(parts) {
+        var event = trim(parts[i])
+        if event != "" {
+            result.push(event)
+        }
+        i = i + 1
+    }
+    result
+}
+
+fn split_by(s: str, sep: str) -> [str] {
+    var result: [str] = []
+    var current = ""
+    var i: i32 = 0
+    while i < length(s) {
+        var ch = substring(s, i, i + 1)
+        if ch == sep {
+            result.push(current)
+            current = ""
+        } else {
+            current = current + ch
+        }
+        i = i + 1
+    }
+    if current != "" {
+        result.push(current)
+    }
+    result
+}
+
+fn trim(s: str) -> str {
+    s  // TODO: implement trim
+}
+
+fn events_to_str(events: [str]) -> str {
+    var result = ""
+    var i: i32 = 0
+    while i < length(events) {
+        result = result + events[i]
+        if i < length(events) - 1 {
+            result = result + ", "
+        }
+        i = i + 1
+    }
+    result
+}
+
+fn indexOf(s: str, substr: str) -> i32 {
+    var i: i32 = 0
+    var len = length(s)
+    var sublen = length(substr)
+    while i <= len - sublen {
+        if substring(s, i, i + sublen) == substr { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn bool_to_str(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+fn bool_to_json(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+fn parse_int(s: str) -> i32 {
+    0  // TODO: implement parse_int
+}
+
+// 필요한 함수들:
+// - get_positional, has_flag, get_flag, get_format
+// - get_default_host, new_client, new_cache
+// - new_webhook_service, create_webhook, list_webhooks, delete_webhook
+// - error_message

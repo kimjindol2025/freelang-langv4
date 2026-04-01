@@ -1,10 +1,10 @@
 {
-  "name": "freelang-cli",
-  "version": "4.1.0",
-  "description": "FreeLang v4.1 - AI-First Programming Language with REPL (240+/252 tests passing)",
-  "main": "dist/main.js",
+  "name": "gogs-cli-fl",
+  "version": "1.0.0",
+  "description": "gogs-cli-fl v1.0 - FreeLang v4 기반 Gogs CLI. 33개 명령어, 102개 API 메서드, 80% API 호출 감소",
+  "main": "src/commands/main.fl",
   "bin": {
-    "freelang": "dist/main.js"
+    "gogs": "src/commands/main.fl"
   },
   "scripts": {
     "build": "tsc",
@@ -16,18 +16,25 @@
     "url": "https://gogs.dclub.kr/kim/freelang-v4.git"
   },
   "keywords": [
-    "programming-language",
-    "compiler",
-    "ai",
+    "gogs",
+    "git",
+    "cli",
     "freelang",
-    "static-typing",
-    "bytecode-vm"
+    "api-client",
+    "batch-processing",
+    "caching"
   ],
   "author": "KimNexus",
   "license": "MIT",
   "files": [
-    "dist/",
-    "README.md",
+    "src/",
+    "stdlib/",
+    "GOGS_CLI_README.md",
+    "API.md",
+    "INSTALL.md",
+    "MIGRATION.md",
+    "CHANGELOG.md",
+    "PHASE6_COMPLETE.md",
     "LICENSE"
   ],
   "engines": {

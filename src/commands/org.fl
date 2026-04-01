@@ -1,0 +1,425 @@
+// FreeLang v4.2 — gogs-cli Phase 5 조직 명령어
+// create, list, view, member add/remove 구현
+// 250라인
+
+/// 조직 생성
+/// gogs org create ORG_NAME [--full-name "name"] [--email email@com]
+async fn cmd_org_create(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var org_name = get_positional(args, 0)
+    if org_name == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Organization name is required"
+        }
+    }
+
+    // 2. 플래그 파싱
+    var full_name = get_flag(args, "full-name")
+    var email = get_flag(args, "email")
+    var website = get_flag(args, "website")
+    var location = get_flag(args, "location")
+
+    if full_name == "" {
+        full_name = org_name
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Creating organization '" + org_name + "'...")
+
+    var org_service = new_org_service(client, cache)
+    var req = CreateOrgRequest {
+        username: org_name,
+        full_name: full_name,
+        email: email,
+        website: website,
+        location: location,
+        bio: ""
+    }
+    var result = await create_org(org_service, req)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(org) => {
+            var output = ""
+            output = output + "✓ Organization created\n"
+            output = output + "  Name:     " + org.username + "\n"
+            output = output + "  Full Name: " + org.full_name + "\n"
+            if org.email != "" {
+                output = output + "  Email:    " + org.email + "\n"
+            }
+
+            CliResult {
+                exit_code: 0,
+                output: output,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 조직 목록
+/// gogs org list [--json] [--yaml]
+async fn cmd_org_list(args: CliArgs) -> CliResult {
+    // 1. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 2. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 3. API 호출
+    println("Fetching organizations...")
+
+    var org_service = new_org_service(client, cache)
+    var result = await list_orgs(org_service)
+
+    // 4. 결과 처리
+    match result {
+        Result::Ok(orgs) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return org_list_json(orgs)
+            }
+            if format == "yaml" {
+                return org_list_yaml(orgs)
+            }
+
+            org_list_text(orgs)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 조직 상세
+/// gogs org view ORG_NAME [--json] [--yaml]
+async fn cmd_org_view(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var org_name = get_positional(args, 0)
+    if org_name == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Organization name is required"
+        }
+    }
+
+    // 2. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 3. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 4. API 호출
+    println("Fetching organization '" + org_name + "'...")
+
+    var org_service = new_org_service(client, cache)
+    var result = await get_org(org_service, org_name)
+
+    // 5. 결과 처리
+    match result {
+        Result::Ok(org) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return org_view_json(org)
+            }
+            if format == "yaml" {
+                return org_view_yaml(org)
+            }
+
+            org_view_text(org)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 멤버 추가
+/// gogs member add ORG_NAME USERNAME
+async fn cmd_member_add(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var org_name = get_positional(args, 0)
+    var username = get_positional(args, 1)
+
+    if org_name == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Organization name is required"
+        }
+    }
+
+    if username == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Username is required"
+        }
+    }
+
+    // 2. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 3. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 4. API 호출
+    println("Adding " + username + " to " + org_name + "...")
+
+    var org_service = new_org_service(client, cache)
+    var result = await add_org_member(org_service, org_name, username)
+
+    // 5. 결과 처리
+    match result {
+        Result::Ok(_) => {
+            CliResult {
+                exit_code: 0,
+                output: "✓ Member added: " + username + " to " + org_name,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 멤버 제거
+/// gogs member remove ORG_NAME USERNAME
+async fn cmd_member_remove(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var org_name = get_positional(args, 0)
+    var username = get_positional(args, 1)
+
+    if org_name == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Organization name is required"
+        }
+    }
+
+    if username == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Username is required"
+        }
+    }
+
+    // 2. 플래그 확인
+    var force = has_flag(args, "force")
+
+    if !force {
+        println("⚠️  This will remove " + username + " from " + org_name)
+        println("Run with --force to confirm")
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Removal not confirmed"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Removing " + username + " from " + org_name + "...")
+
+    var org_service = new_org_service(client, cache)
+    var result = await remove_org_member(org_service, org_name, username)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(_) => {
+            CliResult {
+                exit_code: 0,
+                output: "✓ Member removed: " + username + " from " + org_name,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+// ==================== 출력 포맷: 목록 ====================
+
+fn org_list_text(orgs: [Organization]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                   Organization List                                ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    if length(orgs) == 0 {
+        output = output + "No organizations found\n"
+        return CliResult {
+            exit_code: 0,
+            output: output,
+            error: ""
+        }
+    }
+
+    var i: i32 = 0
+    while i < length(orgs) {
+        var org = orgs[i]
+        output = output + "📁 " + org.username + "\n"
+        output = output + "   " + org.full_name + "\n"
+        if org.email != "" {
+            output = output + "   Email: " + org.email + "\n"
+        }
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "Total: " + str(length(orgs)) + " organizations\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+fn org_list_json(orgs: [Organization]) -> CliResult {
+    var json = "[\n"
+    var i: i32 = 0
+    while i < length(orgs) {
+        var org = orgs[i]
+        json = json + "  {\"name\": \"" + org.username + "\", \"full_name\": \"" + org.full_name + "\"}"
+        if i < length(orgs) - 1 { json = json + "," }
+        json = json + "\n"
+        i = i + 1
+    }
+    json = json + "]\n"
+    CliResult { exit_code: 0, output: json, error: "" }
+}
+
+fn org_list_yaml(orgs: [Organization]) -> CliResult {
+    var yaml = "organizations:\n"
+    var i: i32 = 0
+    while i < length(orgs) {
+        var org = orgs[i]
+        yaml = yaml + "  - name: " + org.username + "\n"
+        yaml = yaml + "    full_name: " + org.full_name + "\n"
+        i = i + 1
+    }
+    CliResult { exit_code: 0, output: yaml, error: "" }
+}
+
+// ==================== 출력 포맷: 상세 ====================
+
+fn org_view_text(org: Organization) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                   Organization Details                            ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+    output = output + "Name:        " + org.username + "\n"
+    output = output + "Full Name:   " + org.full_name + "\n"
+    output = output + "Email:       " + org.email + "\n"
+    output = output + "Website:     " + org.website + "\n"
+    output = output + "Location:    " + org.location + "\n"
+    output = output + "\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+fn org_view_json(org: Organization) -> CliResult {
+    var json = "{\"name\": \"" + org.username + "\", \"full_name\": \"" + org.full_name + "\", \"email\": \"" + org.email + "\"}\n"
+    CliResult { exit_code: 0, output: json, error: "" }
+}
+
+fn org_view_yaml(org: Organization) -> CliResult {
+    var yaml = "name: " + org.username + "\nfull_name: " + org.full_name + "\nemail: " + org.email + "\n"
+    CliResult { exit_code: 0, output: yaml, error: "" }
+}
+
+// 필요한 함수들:
+// - get_positional, has_flag, get_flag, get_format
+// - get_default_host, new_client, new_cache
+// - new_org_service, create_org, list_orgs, get_org, add_org_member, remove_org_member
+// - error_message

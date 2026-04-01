@@ -1,0 +1,244 @@
+// FreeLang v4.2 — gogs-cli Phase 5 팀 명령어
+// create, list 구현
+// 200라인
+
+/// 팀 생성
+/// gogs team create ORG/TEAM_NAME [--description "desc"] [--permission "push"]
+async fn cmd_team_create(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var team_path = get_positional(args, 0)
+    if team_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Team path (ORG/TEAM_NAME) is required"
+        }
+    }
+
+    // 파싱: "org/team" -> [org, team]
+    var parts = split_path(team_path, "/")
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid team path. Use: ORG/TEAM_NAME"
+        }
+    }
+
+    var org_name = parts[0]
+    var team_name = parts[1]
+
+    // 2. 플래그 파싱
+    var description = get_flag(args, "description")
+    var permission = get_flag(args, "permission")
+    if permission == "" {
+        permission = "push"
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Creating team '" + team_name + "' in '" + org_name + "'...")
+
+    var team_service = new_team_service(client, cache)
+    var req = CreateTeamRequest {
+        name: team_name,
+        description: description,
+        permission: permission
+    }
+    var result = await create_team(team_service, org_name, req)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(team) => {
+            var output = ""
+            output = output + "✓ Team created\n"
+            output = output + "  Name:        " + team.name + "\n"
+            output = output + "  Description: " + team.description + "\n"
+            output = output + "  Permission:  " + team.permission + "\n"
+
+            CliResult {
+                exit_code: 0,
+                output: output,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 팀 목록
+/// gogs team list ORG_NAME [--json] [--yaml]
+async fn cmd_team_list(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var org_name = get_positional(args, 0)
+    if org_name == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Organization name is required"
+        }
+    }
+
+    // 2. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 3. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 4. API 호출
+    println("Fetching teams for '" + org_name + "'...")
+
+    var team_service = new_team_service(client, cache)
+    var result = await list_teams(team_service, org_name)
+
+    // 5. 결과 처리
+    match result {
+        Result::Ok(teams) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return team_list_json(teams)
+            }
+            if format == "yaml" {
+                return team_list_yaml(teams)
+            }
+
+            team_list_text(org_name, teams)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+// ==================== 출력 포맷 ====================
+
+fn team_list_text(org_name: str, teams: [Team]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                  Teams in " + org_name + "\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    if length(teams) == 0 {
+        output = output + "No teams found\n"
+        return CliResult {
+            exit_code: 0,
+            output: output,
+            error: ""
+        }
+    }
+
+    var i: i32 = 0
+    while i < length(teams) {
+        var team = teams[i]
+        output = output + "👥 " + team.name + "\n"
+        output = output + "   " + team.description + "\n"
+        output = output + "   Permission: " + team.permission + "\n"
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "Total: " + str(length(teams)) + " teams\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+fn team_list_json(teams: [Team]) -> CliResult {
+    var json = "[\n"
+    var i: i32 = 0
+    while i < length(teams) {
+        var team = teams[i]
+        json = json + "  {\"name\": \"" + team.name + "\", \"description\": \"" + team.description + "\", \"permission\": \"" + team.permission + "\"}"
+        if i < length(teams) - 1 { json = json + "," }
+        json = json + "\n"
+        i = i + 1
+    }
+    json = json + "]\n"
+    CliResult { exit_code: 0, output: json, error: "" }
+}
+
+fn team_list_yaml(teams: [Team]) -> CliResult {
+    var yaml = "teams:\n"
+    var i: i32 = 0
+    while i < length(teams) {
+        var team = teams[i]
+        yaml = yaml + "  - name: " + team.name + "\n"
+        yaml = yaml + "    description: " + team.description + "\n"
+        yaml = yaml + "    permission: " + team.permission + "\n"
+        i = i + 1
+    }
+    CliResult { exit_code: 0, output: yaml, error: "" }
+}
+
+// ==================== 유틸리티 ====================
+
+fn split_path(path: str, sep: str) -> [str] {
+    var result: [str] = []
+    var idx = indexOf(path, sep)
+
+    if idx == -1 {
+        result.push(path)
+        return result
+    }
+
+    var part1 = substring(path, 0, idx)
+    var part2 = substring(path, idx + 1, length(path))
+
+    result.push(part1)
+    result.push(part2)
+
+    result
+}
+
+fn indexOf(s: str, substr: str) -> i32 {
+    var i: i32 = 0
+    var len = length(s)
+    var sublen = length(substr)
+    while i <= len - sublen {
+        if substring(s, i, i + sublen) == substr { return i }
+        i = i + 1
+    }
+    -1
+}
+
+// 필요한 함수들:
+// - get_positional, has_flag, get_flag, get_format
+// - get_default_host, new_client, new_cache
+// - new_team_service, create_team, list_teams
+// - error_message

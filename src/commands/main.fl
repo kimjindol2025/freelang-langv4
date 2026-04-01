@@ -1,0 +1,492 @@
+// FreeLang v4.2 — gogs-cli Phase 5 메인 엔트리 포인트
+// 30+ CLI 명령어 디스패치, 도움말, 버전 정보
+// 200라인
+
+/// CLI 인자 구조
+struct CliArgs {
+    command: str        // "auth", "repo", "user", etc.
+    subcommand: str     // "login", "create", "list", etc.
+    flags: {str: str}   // --flag: value
+    positional: [str]   // 위치 인자
+}
+
+/// CLI 결과
+struct CliResult {
+    exit_code: i32      // 0: 성공, 1: 실패
+    output: str         // 출력 메시지
+    error: str          // 에러 메시지
+}
+
+// ==================== 메인 엔트리 포인트 ====================
+
+/// CLI 메인 함수
+async fn main() -> i32 {
+    // 프로덕션: process.argv에서 인자 파싱
+    // 현재: 테스트용 하드코딩
+
+    println("🚀 gogs-cli v1.0 (Phase 5)")
+
+    // 인자 파싱 (테스트)
+    var args = parse_cli_args()
+
+    // 글로벌 플래그 처리
+    if has_flag(args, "help") || has_flag(args, "h") {
+        print_help()
+        return 0
+    }
+
+    if has_flag(args, "version") || has_flag(args, "v") {
+        print_version()
+        return 0
+    }
+
+    // 명령어 없으면 도움말
+    if args.command == "" {
+        print_help()
+        return 1
+    }
+
+    // 명령어 디스패치
+    var result = await dispatch_command(args)
+
+    // 결과 출력
+    if result.error != "" {
+        println("✗ " + result.error)
+    }
+    if result.output != "" {
+        println(result.output)
+    }
+
+    result.exit_code
+}
+
+// ==================== 명령어 디스패치 ====================
+
+/// 명령어 디스패치
+async fn dispatch_command(args: CliArgs) -> CliResult {
+    var cmd = args.command
+    var subcmd = args.subcommand
+
+    // auth 명령어들
+    if cmd == "auth" {
+        if subcmd == "login" {
+            return await cmd_auth_login(args)
+        }
+        if subcmd == "status" {
+            return await cmd_auth_status(args)
+        }
+    }
+
+    // repo 명령어들
+    if cmd == "repo" {
+        if subcmd == "create" {
+            return await cmd_repo_create(args)
+        }
+        if subcmd == "list" {
+            return await cmd_repo_list(args)
+        }
+        if subcmd == "view" {
+            return await cmd_repo_view(args)
+        }
+        if subcmd == "delete" {
+            return await cmd_repo_delete(args)
+        }
+        if subcmd == "ensure" {
+            return await cmd_repo_ensure(args)
+        }
+    }
+
+    // user 명령어들
+    if cmd == "user" {
+        if subcmd == "create" {
+            return await cmd_user_create(args)
+        }
+        if subcmd == "list" {
+            return await cmd_user_list(args)
+        }
+        if subcmd == "view" {
+            return await cmd_user_view(args)
+        }
+        if subcmd == "delete" {
+            return await cmd_user_delete(args)
+        }
+    }
+
+    // org 명령어들
+    if cmd == "org" {
+        if subcmd == "create" {
+            return await cmd_org_create(args)
+        }
+        if subcmd == "list" {
+            return await cmd_org_list(args)
+        }
+        if subcmd == "view" {
+            return await cmd_org_view(args)
+        }
+    }
+
+    // team 명령어들
+    if cmd == "team" {
+        if subcmd == "create" {
+            return await cmd_team_create(args)
+        }
+        if subcmd == "list" {
+            return await cmd_team_list(args)
+        }
+    }
+
+    // issue 명령어들
+    if cmd == "issue" {
+        if subcmd == "create" {
+            return await cmd_issue_create(args)
+        }
+        if subcmd == "list" {
+            return await cmd_issue_list(args)
+        }
+    }
+
+    // webhook 명령어들
+    if cmd == "webhook" {
+        if subcmd == "create" {
+            return await cmd_webhook_create(args)
+        }
+        if subcmd == "list" {
+            return await cmd_webhook_list(args)
+        }
+        if subcmd == "delete" {
+            return await cmd_webhook_delete(args)
+        }
+    }
+
+    // deploy-key 명령어들
+    if cmd == "deploy-key" {
+        if subcmd == "add" {
+            return await cmd_deploy_key_add(args)
+        }
+        if subcmd == "list" {
+            return await cmd_deploy_key_list(args)
+        }
+        if subcmd == "delete" {
+            return await cmd_deploy_key_delete(args)
+        }
+    }
+
+    // member 명령어들
+    if cmd == "member" {
+        if subcmd == "add" {
+            return await cmd_member_add(args)
+        }
+        if subcmd == "remove" {
+            return await cmd_member_remove(args)
+        }
+    }
+
+    // batch 명령어들
+    if cmd == "batch" {
+        if subcmd == "create" {
+            return await cmd_batch_create(args)
+        }
+        if subcmd == "ensure" {
+            return await cmd_batch_ensure(args)
+        }
+        if subcmd == "delete" {
+            return await cmd_batch_delete(args)
+        }
+    }
+
+    // config 명령어들
+    if cmd == "config" {
+        if subcmd == "set" {
+            return await cmd_config_set(args)
+        }
+        if subcmd == "get" {
+            return await cmd_config_get(args)
+        }
+    }
+
+    // analyze 명령어
+    if cmd == "analyze" {
+        return await cmd_analyze(args)
+    }
+
+    // 알 수 없는 명령어
+    CliResult {
+        exit_code: 1,
+        output: "",
+        error: "Unknown command: " + cmd
+    }
+}
+
+// ==================== CLI 인자 파싱 ====================
+
+/// CLI 인자 파싱
+fn parse_cli_args() -> CliArgs {
+    // TODO: process.argv에서 파싱
+    // 현재: 테스트용 기본값
+
+    CliArgs {
+        command: "repo",
+        subcommand: "list",
+        flags: {},
+        positional: []
+    }
+}
+
+/// 플래그 확인
+fn has_flag(args: CliArgs, name: str) -> bool {
+    name in args.flags
+}
+
+/// 플래그 값 조회
+fn get_flag(args: CliArgs, name: str) -> str {
+    if name in args.flags {
+        return args.flags[name]
+    }
+    ""
+}
+
+/// 위치 인자 조회
+fn get_positional(args: CliArgs, index: i32) -> str {
+    if index >= 0 && index < length(args.positional) {
+        return args.positional[index]
+    }
+    ""
+}
+
+/// 출력 포맷 옵션 확인
+fn get_format(args: CliArgs) -> str {
+    if has_flag(args, "json") {
+        return "json"
+    }
+    if has_flag(args, "yaml") {
+        return "yaml"
+    }
+    "text"  // 기본값
+}
+
+// ==================== 도움말 및 버전 ====================
+
+/// 도움말 출력
+fn print_help() {
+    println("")
+    println("╔════════════════════════════════════════════════════════════╗")
+    println("║                    gogs-cli v1.0 (Phase 5)                 ║")
+    println("║               Gogs Git Service CLI Management              ║")
+    println("╚════════════════════════════════════════════════════════════╝")
+    println("")
+    println("USAGE:")
+    println("  gogs <command> <subcommand> [options]")
+    println("")
+    println("COMMANDS:")
+    println("  auth")
+    println("    login          로그인 (--host URL --token TOKEN)")
+    println("    status         로그인 상태 확인")
+    println("")
+    println("  repo")
+    println("    create         저장소 생성 (--private --description \"desc\")")
+    println("    list           저장소 목록 (--json, --yaml)")
+    println("    view           저장소 상세 (OWNER/REPO)")
+    println("    delete         저장소 삭제 (OWNER/REPO --force)")
+    println("    ensure         저장소 동기화 (--private)")
+    println("")
+    println("  user")
+    println("    create         사용자 생성 (--email EMAIL --password PASS)")
+    println("    list           사용자 목록")
+    println("    view           사용자 상세 (USERNAME)")
+    println("    delete         사용자 삭제 (USERNAME --force)")
+    println("")
+    println("  org")
+    println("    create         조직 생성")
+    println("    list           조직 목록")
+    println("    view           조직 상세 (ORG_NAME)")
+    println("")
+    println("  team")
+    println("    create         팀 생성")
+    println("    list           팀 목록 (ORG_NAME)")
+    println("")
+    println("  issue")
+    println("    create         이슈 생성 (OWNER/REPO --title TITLE --body BODY)")
+    println("    list           이슈 목록 (OWNER/REPO)")
+    println("")
+    println("  webhook")
+    println("    create         웹훅 생성 (OWNER/REPO --url URL)")
+    println("    list           웹훅 목록 (OWNER/REPO)")
+    println("    delete         웹훅 삭제 (OWNER/REPO WEBHOOK_ID)")
+    println("")
+    println("  deploy-key")
+    println("    add            배포키 추가 (OWNER/REPO --title TITLE --key KEY)")
+    println("    list           배포키 목록 (OWNER/REPO)")
+    println("    delete         배포키 삭제 (OWNER/REPO KEY_ID)")
+    println("")
+    println("  member")
+    println("    add            멤버 추가 (ORG USERNAME)")
+    println("    remove         멤버 제거 (ORG USERNAME)")
+    println("")
+    println("  batch")
+    println("    create         배치 생성 (REPOS_FILE.yaml --parallel 10)")
+    println("    ensure         배치 동기화 (DESIRED.yaml)")
+    println("    delete         배치 삭제 (REPOS.yaml --force)")
+    println("")
+    println("  config")
+    println("    set            설정 저장 (KEY VALUE)")
+    println("    get            설정 조회 (KEY)")
+    println("")
+    println("  analyze        서버 데이터 분석")
+    println("")
+    println("OPTIONS:")
+    println("  --help, -h     도움말 표시")
+    println("  --version, -v  버전 표시")
+    println("  --json         JSON 포맷 출력")
+    println("  --yaml         YAML 포맷 출력")
+    println("  --force        강제 삭제 확인")
+    println("")
+}
+
+/// 버전 출력
+fn print_version() {
+    println("gogs-cli version 1.0 (Phase 5)")
+    println("FreeLang v4.2")
+    println("Build: 2026-04-01")
+}
+
+// ==================== 명령어 선언 (구현은 각 파일에) ====================
+
+// auth.fl
+async fn cmd_auth_login(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: auth login", error: "" }
+}
+
+async fn cmd_auth_status(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: auth status", error: "" }
+}
+
+// repo.fl
+async fn cmd_repo_create(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: repo create", error: "" }
+}
+
+async fn cmd_repo_list(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: repo list", error: "" }
+}
+
+async fn cmd_repo_view(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: repo view", error: "" }
+}
+
+async fn cmd_repo_delete(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: repo delete", error: "" }
+}
+
+async fn cmd_repo_ensure(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: repo ensure", error: "" }
+}
+
+// user.fl
+async fn cmd_user_create(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: user create", error: "" }
+}
+
+async fn cmd_user_list(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: user list", error: "" }
+}
+
+async fn cmd_user_view(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: user view", error: "" }
+}
+
+async fn cmd_user_delete(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: user delete", error: "" }
+}
+
+// org.fl
+async fn cmd_org_create(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: org create", error: "" }
+}
+
+async fn cmd_org_list(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: org list", error: "" }
+}
+
+async fn cmd_org_view(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: org view", error: "" }
+}
+
+// team.fl
+async fn cmd_team_create(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: team create", error: "" }
+}
+
+async fn cmd_team_list(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: team list", error: "" }
+}
+
+// issue.fl
+async fn cmd_issue_create(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: issue create", error: "" }
+}
+
+async fn cmd_issue_list(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: issue list", error: "" }
+}
+
+// webhook.fl
+async fn cmd_webhook_create(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: webhook create", error: "" }
+}
+
+async fn cmd_webhook_list(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: webhook list", error: "" }
+}
+
+async fn cmd_webhook_delete(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: webhook delete", error: "" }
+}
+
+// deploy_key.fl
+async fn cmd_deploy_key_add(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: deploy-key add", error: "" }
+}
+
+async fn cmd_deploy_key_list(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: deploy-key list", error: "" }
+}
+
+async fn cmd_deploy_key_delete(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: deploy-key delete", error: "" }
+}
+
+// org.fl (members)
+async fn cmd_member_add(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: member add", error: "" }
+}
+
+async fn cmd_member_remove(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: member remove", error: "" }
+}
+
+// batch.fl
+async fn cmd_batch_create(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: batch create", error: "" }
+}
+
+async fn cmd_batch_ensure(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: batch ensure", error: "" }
+}
+
+async fn cmd_batch_delete(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: batch delete", error: "" }
+}
+
+// config.fl
+async fn cmd_config_set(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: config set", error: "" }
+}
+
+async fn cmd_config_get(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: config get", error: "" }
+}
+
+// analyze.fl
+async fn cmd_analyze(args: CliArgs) -> CliResult {
+    CliResult { exit_code: 0, output: "TODO: analyze", error: "" }
+}

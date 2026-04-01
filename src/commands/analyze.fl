@@ -1,0 +1,227 @@
+// FreeLang v4.2 — gogs-cli Phase 5 분석 명령어
+// analyze 구현 (저장소 통계, public/private 분포 등)
+// 150라인
+
+/// 서버 데이터 분석
+/// gogs analyze [--json] [--yaml]
+async fn cmd_analyze(args: CliArgs) -> CliResult {
+    // 1. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 2. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(0)  // 분석은 캐시 안 함
+
+    // 3. 데이터 수집
+    println("Analyzing server data...")
+
+    var repo_service = new_repo_service(client, cache)
+    var repos_result = await list_repos(repo_service)
+
+    match repos_result {
+        Result::Ok(repos) => {
+            // 4. 분석 수행
+            var stats = analyze_repos(repos)
+
+            // 5. 포맷 선택
+            var format = get_format(args)
+
+            if format == "json" {
+                return analyze_json(stats)
+            }
+            if format == "yaml" {
+                return analyze_yaml(stats)
+            }
+
+            // 기본: 텍스트
+            analyze_text(stats)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+// ==================== 분석 함수 ====================
+
+/// 저장소 분석
+fn analyze_repos(repos: [Repo]) -> RepositoryStats {
+    var public_count: i32 = 0
+    var private_count: i32 = 0
+    var recently_updated: [Repo] = []
+
+    var i: i32 = 0
+    while i < length(repos) {
+        var repo = repos[i]
+
+        if repo.private {
+            private_count = private_count + 1
+        } else {
+            public_count = public_count + 1
+        }
+
+        // 최근 업데이트된 저장소 수집 (7일 이내)
+        // TODO: 날짜 비교 구현
+        // if is_recently_updated(repo.updated_at) {
+        //     recently_updated.push(repo)
+        // }
+
+        i = i + 1
+    }
+
+    // 최근 업데이트 저장소 정렬 (최신순)
+    var sorted = sort_repos_by_date(recently_updated)
+
+    RepositoryStats {
+        total: length(repos),
+        public: public_count,
+        private: private_count,
+        recently_updated_7days: length(sorted),
+        by_updated: sorted
+    }
+}
+
+/// 저장소 정렬 (날짜순)
+fn sort_repos_by_date(repos: [Repo]) -> [Repo] {
+    // TODO: 정렬 알고리즘 구현 (버블 정렬 또는 병합 정렬)
+    repos  // placeholder
+}
+
+/// 저장소가 최근에 업데이트되었는지 확인
+fn is_recently_updated(updated_at: str) -> bool {
+    // TODO: 날짜 파싱 및 비교 구현
+    false  // placeholder
+}
+
+// ==================== 출력 포맷 ====================
+
+/// 텍스트 포맷 분석 결과
+fn analyze_text(stats: RepositoryStats) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                    Repository Analysis                             ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    // 요약 통계
+    output = output + "📊 Summary\n"
+    output = output + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    output = output + "Total Repositories: " + str(stats.total) + "\n"
+    output = output + "Public:             " + str(stats.public) + " (" + calc_percent(stats.public, stats.total) + "%)\n"
+    output = output + "Private:            " + str(stats.private) + " (" + calc_percent(stats.private, stats.total) + "%)\n"
+    output = output + "Recently Updated:   " + str(stats.recently_updated_7days) + " (last 7 days)\n"
+    output = output + "\n"
+
+    // 최근 업데이트 저장소
+    if length(stats.by_updated) > 0 {
+        output = output + "⏰ Recently Updated (Top 10)\n"
+        output = output + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+
+        var i: i32 = 0
+        while i < length(stats.by_updated) && i < 10 {
+            var repo = stats.by_updated[i]
+            output = output + str(i + 1) + ". " + repo.full_name + "\n"
+            output = output + "   Updated: " + repo.updated_at + "\n"
+            i = i + 1
+        }
+
+        output = output + "\n"
+    }
+
+    output = output + "Analysis completed at: " + get_timestamp() + "\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+/// JSON 포맷 분석 결과
+fn analyze_json(stats: RepositoryStats) -> CliResult {
+    var json = "{\n"
+    json = json + "  \"total\": " + str(stats.total) + ",\n"
+    json = json + "  \"public\": " + str(stats.public) + ",\n"
+    json = json + "  \"private\": " + str(stats.private) + ",\n"
+    json = json + "  \"public_percent\": " + str(calc_percent(stats.public, stats.total)) + ",\n"
+    json = json + "  \"private_percent\": " + str(calc_percent(stats.private, stats.total)) + ",\n"
+    json = json + "  \"recently_updated_7days\": " + str(stats.recently_updated_7days) + ",\n"
+    json = json + "  \"recently_updated_repos\": [\n"
+
+    var i: i32 = 0
+    while i < length(stats.by_updated) && i < 10 {
+        var repo = stats.by_updated[i]
+        json = json + "    {\"name\": \"" + repo.full_name + "\", \"updated_at\": \"" + repo.updated_at + "\"}"
+        if i < length(stats.by_updated) - 1 { json = json + "," }
+        json = json + "\n"
+        i = i + 1
+    }
+
+    json = json + "  ]\n"
+    json = json + "}\n"
+
+    CliResult {
+        exit_code: 0,
+        output: json,
+        error: ""
+    }
+}
+
+/// YAML 포맷 분석 결과
+fn analyze_yaml(stats: RepositoryStats) -> CliResult {
+    var yaml = "repository_analysis:\n"
+    yaml = yaml + "  total: " + str(stats.total) + "\n"
+    yaml = yaml + "  public: " + str(stats.public) + "\n"
+    yaml = yaml + "  private: " + str(stats.private) + "\n"
+    yaml = yaml + "  public_percent: " + str(calc_percent(stats.public, stats.total)) + "%\n"
+    yaml = yaml + "  private_percent: " + str(calc_percent(stats.private, stats.total)) + "%\n"
+    yaml = yaml + "  recently_updated_7days: " + str(stats.recently_updated_7days) + "\n"
+    yaml = yaml + "  recently_updated_repos:\n"
+
+    var i: i32 = 0
+    while i < length(stats.by_updated) && i < 10 {
+        var repo = stats.by_updated[i]
+        yaml = yaml + "    - name: " + repo.full_name + "\n"
+        yaml = yaml + "      updated_at: " + repo.updated_at + "\n"
+        i = i + 1
+    }
+
+    CliResult {
+        exit_code: 0,
+        output: yaml,
+        error: ""
+    }
+}
+
+// ==================== 유틸리티 ====================
+
+/// 퍼센트 계산
+fn calc_percent(part: i32, total: i32) -> i32 {
+    if total == 0 {
+        return 0
+    }
+    (part * 100) / total
+}
+
+/// 현재 타임스탬프
+fn get_timestamp() -> str {
+    // TODO: 현재 시간 구현
+    ""  // placeholder
+}
+
+// 필요한 함수들:
+// - get_format
+// - get_default_host, new_client, new_cache
+// - new_repo_service, list_repos
+// - error_message

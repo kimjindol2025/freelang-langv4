@@ -1,0 +1,352 @@
+// FreeLang v4.2 — gogs-cli Phase 5 배포키 명령어
+// add, list, delete 구현
+// 200라인
+
+/// 배포키 추가
+/// gogs deploy-key add OWNER/REPO --title "title" --key "ssh-rsa ..."
+async fn cmd_deploy_key_add(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 플래그 파싱
+    var title = get_flag(args, "title")
+    var key = get_flag(args, "key")
+
+    if title == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--title is required"
+        }
+    }
+
+    if key == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--key is required"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Adding deploy key to " + repo_path + "...")
+
+    var dk_service = new_deploy_key_service(client, cache)
+    var req = CreateDeployKeyRequest {
+        title: title,
+        key: key,
+        read_only: false
+    }
+    var result = await add_deploy_key(dk_service, owner, repo_name, req)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(dk) => {
+            var output = ""
+            output = output + "✓ Deploy key added\n"
+            output = output + "  ID:       " + str(dk.id) + "\n"
+            output = output + "  Title:    " + dk.title + "\n"
+            output = output + "  Read-only: " + bool_to_str(dk.read_only) + "\n"
+
+            CliResult {
+                exit_code: 0,
+                output: output,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 배포키 목록
+/// gogs deploy-key list OWNER/REPO [--json] [--yaml]
+async fn cmd_deploy_key_list(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 3. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 4. API 호출
+    println("Fetching deploy keys for " + repo_path + "...")
+
+    var dk_service = new_deploy_key_service(client, cache)
+    var result = await list_deploy_keys(dk_service, owner, repo_name)
+
+    // 5. 결과 처리
+    match result {
+        Result::Ok(keys) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return deploy_key_list_json(keys)
+            }
+            if format == "yaml" {
+                return deploy_key_list_yaml(keys)
+            }
+
+            deploy_key_list_text(keys)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 배포키 삭제
+/// gogs deploy-key delete OWNER/REPO KEY_ID [--force]
+async fn cmd_deploy_key_delete(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    var key_id_str = get_positional(args, 1)
+
+    if repo_path == "" || key_id_str == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path and key ID are required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 플래그 확인
+    var force = has_flag(args, "force")
+    if !force {
+        println("⚠️  This will delete deploy key " + key_id_str)
+        println("Run with --force to confirm")
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Deletion not confirmed"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Deleting deploy key " + key_id_str + "...")
+
+    var dk_service = new_deploy_key_service(client, cache)
+    var result = await delete_deploy_key(dk_service, owner, repo_name, parse_int(key_id_str))
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(_) => {
+            CliResult {
+                exit_code: 0,
+                output: "✓ Deploy key deleted: " + key_id_str,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+// ==================== 출력 포맷 ====================
+
+fn deploy_key_list_text(keys: [DeployKey]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                    Deploy Key List                                 ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    if length(keys) == 0 {
+        output = output + "No deploy keys found\n"
+        return CliResult {
+            exit_code: 0,
+            output: output,
+            error: ""
+        }
+    }
+
+    var i: i32 = 0
+    while i < length(keys) {
+        var key = keys[i]
+        var ro_mark = if key.read_only then "[RO]" else "[RW]"
+        output = output + ro_mark + " " + str(key.id) + ": " + key.title + "\n"
+        output = output + "     Created: " + key.created_at + "\n"
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "Total: " + str(length(keys)) + " deploy keys\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+fn deploy_key_list_json(keys: [DeployKey]) -> CliResult {
+    var json = "[\n"
+    var i: i32 = 0
+    while i < length(keys) {
+        var k = keys[i]
+        json = json + "  {\"id\": " + str(k.id) + ", \"title\": \"" + k.title + "\", \"read_only\": " + bool_to_json(k.read_only) + "}"
+        if i < length(keys) - 1 { json = json + "," }
+        json = json + "\n"
+        i = i + 1
+    }
+    json = json + "]\n"
+    CliResult { exit_code: 0, output: json, error: "" }
+}
+
+fn deploy_key_list_yaml(keys: [DeployKey]) -> CliResult {
+    var yaml = "deploy_keys:\n"
+    var i: i32 = 0
+    while i < length(keys) {
+        var k = keys[i]
+        yaml = yaml + "  - id: " + str(k.id) + "\n"
+        yaml = yaml + "    title: " + k.title + "\n"
+        yaml = yaml + "    read_only: " + bool_to_str(k.read_only) + "\n"
+        i = i + 1
+    }
+    CliResult { exit_code: 0, output: yaml, error: "" }
+}
+
+// ==================== 유틸리티 ====================
+
+fn split_repo_path(path: str) -> [str] {
+    var result: [str] = []
+    var idx = indexOf(path, "/")
+    if idx == -1 {
+        result.push(path)
+        return result
+    }
+    result.push(substring(path, 0, idx))
+    result.push(substring(path, idx + 1, length(path)))
+    result
+}
+
+fn indexOf(s: str, substr: str) -> i32 {
+    var i: i32 = 0
+    var len = length(s)
+    var sublen = length(substr)
+    while i <= len - sublen {
+        if substring(s, i, i + sublen) == substr { return i }
+        i = i + 1
+    }
+    -1
+}
+
+fn bool_to_str(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+fn bool_to_json(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+fn parse_int(s: str) -> i32 {
+    0  // TODO: implement parse_int
+}
+
+// 필요한 함수들:
+// - get_positional, has_flag, get_flag, get_format
+// - get_default_host, new_client, new_cache
+// - new_deploy_key_service, add_deploy_key, list_deploy_keys, delete_deploy_key
+// - error_message

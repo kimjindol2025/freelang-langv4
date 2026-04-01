@@ -1,0 +1,275 @@
+// FreeLang v4.2 — gogs-cli Phase 5 이슈 명령어
+// create, list 구현
+// 250라인
+
+/// 이슈 생성
+/// gogs issue create OWNER/REPO --title "title" --body "body"
+async fn cmd_issue_create(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 플래그 파싱
+    var title = get_flag(args, "title")
+    var body = get_flag(args, "body")
+
+    if title == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--title is required"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Creating issue in " + repo_path + "...")
+
+    var issue_service = new_issue_service(client, cache)
+    var req = CreateIssueRequest {
+        title: title,
+        body: body
+    }
+    var result = await create_issue(issue_service, owner, repo_name, req)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(issue) => {
+            var output = ""
+            output = output + "✓ Issue created\n"
+            output = output + "  ID:    #" + str(issue.number) + "\n"
+            output = output + "  Title: " + issue.title + "\n"
+            output = output + "  State: " + issue.state + "\n"
+
+            CliResult {
+                exit_code: 0,
+                output: output,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 이슈 목록
+/// gogs issue list OWNER/REPO [--state "open"] [--json] [--yaml]
+async fn cmd_issue_list(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 플래그 파싱
+    var state = get_flag(args, "state")
+    if state == "" {
+        state = "open"
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Fetching issues for " + repo_path + "...")
+
+    var issue_service = new_issue_service(client, cache)
+    var result = await list_issues(issue_service, owner, repo_name, state)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(issues) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return issue_list_json(issues)
+            }
+            if format == "yaml" {
+                return issue_list_yaml(issues)
+            }
+
+            issue_list_text(repo_path, issues)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+// ==================== 출력 포맷: 목록 ====================
+
+fn issue_list_text(repo_path: str, issues: [Issue]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║              Issues in " + repo_path + "\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    if length(issues) == 0 {
+        output = output + "No issues found\n"
+        return CliResult {
+            exit_code: 0,
+            output: output,
+            error: ""
+        }
+    }
+
+    var i: i32 = 0
+    while i < length(issues) {
+        var issue = issues[i]
+        var state_mark = if issue.state == "open" then "🔴" else "✓"
+        output = output + state_mark + " #" + str(issue.number) + " " + issue.title + "\n"
+        output = output + "   By: " + issue.user.login + " | " + issue.created_at + "\n"
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "Total: " + str(length(issues)) + " issues\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+fn issue_list_json(issues: [Issue]) -> CliResult {
+    var json = "[\n"
+
+    var i: i32 = 0
+    while i < length(issues) {
+        var issue = issues[i]
+        json = json + "  {\n"
+        json = json + "    \"number\": " + str(issue.number) + ",\n"
+        json = json + "    \"title\": \"" + issue.title + "\",\n"
+        json = json + "    \"state\": \"" + issue.state + "\",\n"
+        json = json + "    \"author\": \"" + issue.user.login + "\"\n"
+        json = json + "  }"
+        if i < length(issues) - 1 { json = json + "," }
+        json = json + "\n"
+        i = i + 1
+    }
+
+    json = json + "]\n"
+    CliResult { exit_code: 0, output: json, error: "" }
+}
+
+fn issue_list_yaml(issues: [Issue]) -> CliResult {
+    var yaml = "issues:\n"
+
+    var i: i32 = 0
+    while i < length(issues) {
+        var issue = issues[i]
+        yaml = yaml + "  - number: " + str(issue.number) + "\n"
+        yaml = yaml + "    title: " + issue.title + "\n"
+        yaml = yaml + "    state: " + issue.state + "\n"
+        yaml = yaml + "    author: " + issue.user.login + "\n"
+        i = i + 1
+    }
+
+    CliResult { exit_code: 0, output: yaml, error: "" }
+}
+
+// ==================== 유틸리티 ====================
+
+fn split_repo_path(path: str) -> [str] {
+    var result: [str] = []
+    var idx = indexOf(path, "/")
+
+    if idx == -1 {
+        result.push(path)
+        return result
+    }
+
+    var owner = substring(path, 0, idx)
+    var repo = substring(path, idx + 1, length(path))
+
+    result.push(owner)
+    result.push(repo)
+
+    result
+}
+
+fn indexOf(s: str, substr: str) -> i32 {
+    var i: i32 = 0
+    var len = length(s)
+    var sublen = length(substr)
+    while i <= len - sublen {
+        if substring(s, i, i + sublen) == substr { return i }
+        i = i + 1
+    }
+    -1
+}
+
+// 필요한 함수들:
+// - get_positional, has_flag, get_flag, get_format
+// - get_default_host, new_client, new_cache
+// - new_issue_service, create_issue, list_issues
+// - error_message

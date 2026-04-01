@@ -1,0 +1,315 @@
+// FreeLang v4.2 — gogs-cli Phase 5 인증 명령어
+// gogs auth login, gogs auth status
+// 150라인
+
+/// 로그인 명령어
+/// gogs auth login --host URL --token TOKEN [--name hostname]
+async fn cmd_auth_login(args: CliArgs) -> CliResult {
+    // 1. 플래그 파싱
+    var host_url = get_flag(args, "host")
+    var token = get_flag(args, "token")
+    var host_name = get_flag(args, "name")
+
+    // 2. 입력 검증
+    if host_url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--host URL is required"
+        }
+    }
+
+    if token == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "--token TOKEN is required"
+        }
+    }
+
+    // 3. 호스트 이름 기본값 설정 (URL에서 추출)
+    if host_name == "" {
+        host_name = extract_host_name(host_url)
+    }
+
+    // 4. 연결 테스트
+    println("Testing connection to " + host_url + "...")
+
+    var client = new_client(host_url, token)
+    var test_resp = await http_get(client, "/api/v1/user")
+
+    if is_error(test_resp.status) {
+        var error_msg = parse_http_error(test_resp)
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Connection failed: " + error_msg
+        }
+    }
+
+    // 5. 설정 저장
+    var cfg = await add_host(host_name, host_url, token)
+
+    // 6. 성공 메시지
+    var output = ""
+    output = output + "✓ Logged in successfully\n"
+    output = output + "  Host: " + host_name + "\n"
+    output = output + "  URL:  " + host_url + "\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+/// 상태 확인 명령어
+/// gogs auth status
+async fn cmd_auth_status(args: CliArgs) -> CliResult {
+    // 1. 기본 호스트 확인
+    var host = await get_default_host()
+
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in. Run: gogs auth login --host URL --token TOKEN"
+        }
+    }
+
+    // 2. 사용자 정보 조회
+    var client = new_client(host.url, host.token)
+    var resp = await http_get(client, "/api/v1/user")
+
+    if is_error(resp.status) {
+        var error_msg = parse_http_error(resp)
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Failed to fetch user info: " + error_msg
+        }
+    }
+
+    // 3. 사용자 정보 파싱
+    var user_data = json_parse(resp.body) as User
+
+    // 4. 모든 호스트 목록 조회
+    var all_hosts = await list_hosts()
+
+    // 5. 포맷 선택
+    var format = get_format(args)
+
+    if format == "json" {
+        return auth_status_json(user_data, host, all_hosts)
+    }
+
+    if format == "yaml" {
+        return auth_status_yaml(user_data, host, all_hosts)
+    }
+
+    // 기본: 텍스트
+    auth_status_text(user_data, host, all_hosts)
+}
+
+// ==================== 헬퍼 함수 ====================
+
+/// URL에서 호스트 이름 추출
+fn extract_host_name(url: str) -> str {
+    // "http://localhost:15000" -> "localhost"
+    // "https://gogs.example.com" -> "example.com"
+
+    // 프로토콜 제거
+    var result = url
+    if startsWith(result, "https://") {
+        result = substring(result, 8, length(result))
+    } else if startsWith(result, "http://") {
+        result = substring(result, 7, length(result))
+    }
+
+    // 포트 제거
+    var colon_idx = indexOf(result, ":")
+    if colon_idx != -1 {
+        result = substring(result, 0, colon_idx)
+    }
+
+    // 슬래시 제거
+    var slash_idx = indexOf(result, "/")
+    if slash_idx != -1 {
+        result = substring(result, 0, slash_idx)
+    }
+
+    result
+}
+
+/// HTTP 에러 메시지 파싱
+fn parse_http_error(resp: HttpResponse) -> str {
+    if resp.status == 401 {
+        return "Unauthorized (invalid token)"
+    }
+    if resp.status == 403 {
+        return "Forbidden"
+    }
+    if resp.status == 404 {
+        return "Not found"
+    }
+    if resp.status >= 500 {
+        return "Server error (HTTP " + str(resp.status) + ")"
+    }
+    if resp.status >= 400 {
+        return "Bad request (HTTP " + str(resp.status) + ")"
+    }
+
+    "Connection error"
+}
+
+// ==================== 출력 포맷 ====================
+
+/// 텍스트 포맷 상태 출력
+fn auth_status_text(user: User, host: HostConfig, all_hosts: [HostConfig]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════╗\n"
+    output = output + "║        Authentication Status           ║\n"
+    output = output + "╚════════════════════════════════════════╝\n"
+    output = output + "\n"
+    output = output + "Current Host:\n"
+    output = output + "  Name:     " + host.name + "\n"
+    output = output + "  URL:      " + host.url + "\n"
+    output = output + "\n"
+    output = output + "User:\n"
+    output = output + "  Login:    " + user.login + "\n"
+    output = output + "  Full Name: " + user.full_name + "\n"
+    output = output + "  Email:    " + user.email + "\n"
+    output = output + "  Admin:    " + bool_to_str(user.is_admin) + "\n"
+    output = output + "\n"
+    output = output + "Configured Hosts: (" + str(length(all_hosts)) + ")\n"
+
+    var i: i32 = 0
+    while i < length(all_hosts) {
+        var h = all_hosts[i]
+        var mark = if h.name == host.name then "✓" else " "
+        output = output + "  [" + mark + "] " + h.name + " (" + h.url + ")\n"
+        i = i + 1
+    }
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+/// JSON 포맷 상태 출력
+fn auth_status_json(user: User, host: HostConfig, all_hosts: [HostConfig]) -> CliResult {
+    var json_str = "{\n"
+    json_str = json_str + "  \"status\": \"authenticated\",\n"
+    json_str = json_str + "  \"current_host\": {\n"
+    json_str = json_str + "    \"name\": \"" + host.name + "\",\n"
+    json_str = json_str + "    \"url\": \"" + host.url + "\"\n"
+    json_str = json_str + "  },\n"
+    json_str = json_str + "  \"user\": {\n"
+    json_str = json_str + "    \"login\": \"" + user.login + "\",\n"
+    json_str = json_str + "    \"full_name\": \"" + user.full_name + "\",\n"
+    json_str = json_str + "    \"email\": \"" + user.email + "\",\n"
+    json_str = json_str + "    \"is_admin\": " + bool_to_json(user.is_admin) + "\n"
+    json_str = json_str + "  },\n"
+    json_str = json_str + "  \"hosts\": [\n"
+
+    var i: i32 = 0
+    while i < length(all_hosts) {
+        var h = all_hosts[i]
+        json_str = json_str + "    {\n"
+        json_str = json_str + "      \"name\": \"" + h.name + "\",\n"
+        json_str = json_str + "      \"url\": \"" + h.url + "\",\n"
+        json_str = json_str + "      \"current\": " + bool_to_json(h.name == host.name) + "\n"
+        json_str = json_str + "    }"
+        if i < length(all_hosts) - 1 {
+            json_str = json_str + ","
+        }
+        json_str = json_str + "\n"
+        i = i + 1
+    }
+
+    json_str = json_str + "  ]\n"
+    json_str = json_str + "}\n"
+
+    CliResult {
+        exit_code: 0,
+        output: json_str,
+        error: ""
+    }
+}
+
+/// YAML 포맷 상태 출력
+fn auth_status_yaml(user: User, host: HostConfig, all_hosts: [HostConfig]) -> CliResult {
+    var yaml_str = "status: authenticated\n"
+    yaml_str = yaml_str + "current_host:\n"
+    yaml_str = yaml_str + "  name: " + host.name + "\n"
+    yaml_str = yaml_str + "  url: " + host.url + "\n"
+    yaml_str = yaml_str + "user:\n"
+    yaml_str = yaml_str + "  login: " + user.login + "\n"
+    yaml_str = yaml_str + "  full_name: " + user.full_name + "\n"
+    yaml_str = yaml_str + "  email: " + user.email + "\n"
+    yaml_str = yaml_str + "  is_admin: " + bool_to_str(user.is_admin) + "\n"
+    yaml_str = yaml_str + "hosts:\n"
+
+    var i: i32 = 0
+    while i < length(all_hosts) {
+        var h = all_hosts[i]
+        yaml_str = yaml_str + "  - name: " + h.name + "\n"
+        yaml_str = yaml_str + "    url: " + h.url + "\n"
+        yaml_str = yaml_str + "    current: " + bool_to_str(h.name == host.name) + "\n"
+        i = i + 1
+    }
+
+    CliResult {
+        exit_code: 0,
+        output: yaml_str,
+        error: ""
+    }
+}
+
+// ==================== 유틸리티 ====================
+
+/// bool을 문자열로 변환
+fn bool_to_str(b: bool) -> str {
+    if b {
+        return "true"
+    }
+    "false"
+}
+
+/// bool을 JSON 값으로 변환
+fn bool_to_json(b: bool) -> str {
+    if b {
+        return "true"
+    }
+    "false"
+}
+
+/// 문자열이 특정 문자를 포함하는지 확인
+fn indexOf(s: str, substr: str) -> i32 {
+    var i: i32 = 0
+    var len = length(s)
+    var sublen = length(substr)
+
+    while i <= len - sublen {
+        if substring(s, i, i + sublen) == substr {
+            return i
+        }
+        i = i + 1
+    }
+
+    -1  // not found
+}
+
+/// 필요한 함수들 (FreeLang 내장 또는 다른 모듈에서)
+// - startsWith(s: str, prefix: str) -> bool
+// - substring(s: str, start: i32, end: i32) -> str
+// - length(s: str) -> i32
+// - indexOf(s: str, substr: str) -> i32
+// - json_parse(json: str) -> T
+// - http_get(client: HttpClient, path: str) -> HttpResponse
+// - is_error(status: i32) -> bool
+// - add_host(name: str, url: str, token: str) -> Config
+// - get_default_host() -> HostConfig
+// - list_hosts() -> [HostConfig]

@@ -1,0 +1,581 @@
+// FreeLang v4.2 — gogs-cli Phase 5 저장소 명령어
+// create, list, view, delete, ensure 구현
+// 400라인
+
+/// 저장소 생성
+/// gogs repo create REPO_NAME [--private] [--description "desc"]
+async fn cmd_repo_create(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_name = get_positional(args, 0)
+    if repo_name == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository name is required"
+        }
+    }
+
+    // 2. 플래그 파싱
+    var is_private = has_flag(args, "private")
+    var description = get_flag(args, "description")
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in. Run: gogs auth login --host URL --token TOKEN"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시 생성
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)  // 5분 TTL
+
+    // 5. API 호출
+    println("Creating repository '" + repo_name + "'...")
+
+    var repo_service = new_repo_service(client, cache)
+    var req = CreateRepoRequest {
+        name: repo_name,
+        private: is_private,
+        description: description
+    }
+    var result = await create_repo(repo_service, req)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(repo) => {
+            var output = ""
+            output = output + "✓ Repository created\n"
+            output = output + "  Name: " + repo.full_name + "\n"
+            output = output + "  URL:  " + repo.html_url + "\n"
+            output = output + "  SSH:  " + repo.ssh_url + "\n"
+            output = output + "  Private: " + bool_to_str(repo.private) + "\n"
+
+            CliResult {
+                exit_code: 0,
+                output: output,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 저장소 목록
+/// gogs repo list [--json] [--yaml]
+async fn cmd_repo_list(args: CliArgs) -> CliResult {
+    // 1. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 2. 클라이언트 및 캐시 생성
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 3. API 호출
+    println("Fetching repositories...")
+
+    var repo_service = new_repo_service(client, cache)
+    var result = await list_repos(repo_service)
+
+    // 4. 결과 처리
+    match result {
+        Result::Ok(repos) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return repo_list_json(repos)
+            }
+            if format == "yaml" {
+                return repo_list_yaml(repos)
+            }
+
+            // 기본: 테이블
+            repo_list_text(repos)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 저장소 상세
+/// gogs repo view OWNER/REPO [--json] [--yaml]
+async fn cmd_repo_view(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    // 파싱: "owner/repo" -> [owner, repo]
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 3. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 4. API 호출
+    println("Fetching repository " + repo_path + "...")
+
+    var repo_service = new_repo_service(client, cache)
+    var result = await get_repo(repo_service, owner, repo_name)
+
+    // 5. 결과 처리
+    match result {
+        Result::Ok(repo) => {
+            var format = get_format(args)
+
+            if format == "json" {
+                return repo_view_json(repo)
+            }
+            if format == "yaml" {
+                return repo_view_yaml(repo)
+            }
+
+            repo_view_text(repo)
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 저장소 삭제
+/// gogs repo delete OWNER/REPO [--force]
+async fn cmd_repo_delete(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_path = get_positional(args, 0)
+    if repo_path == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository path (OWNER/REPO) is required"
+        }
+    }
+
+    var parts = split_repo_path(repo_path)
+    if length(parts) != 2 {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Invalid repository path. Use: OWNER/REPO"
+        }
+    }
+
+    var owner = parts[0]
+    var repo_name = parts[1]
+
+    // 2. 플래그 확인
+    var force = has_flag(args, "force")
+
+    if !force {
+        println("⚠️  This will permanently delete " + repo_path)
+        println("Run with --force to confirm")
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Deletion not confirmed"
+        }
+    }
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. API 호출
+    println("Deleting repository " + repo_path + "...")
+
+    var repo_service = new_repo_service(client, cache)
+    var result = await delete_repo(repo_service, owner, repo_name)
+
+    // 6. 결과 처리
+    match result {
+        Result::Ok(_) => {
+            CliResult {
+                exit_code: 0,
+                output: "✓ Repository deleted: " + repo_path,
+                error: ""
+            }
+        }
+        Result::Err(err) => {
+            CliResult {
+                exit_code: 1,
+                output: "",
+                error: error_message(err)
+            }
+        }
+    }
+}
+
+/// 저장소 동기화 (멱등성)
+/// gogs repo ensure REPO_NAME [--private] [--description "desc"]
+async fn cmd_repo_ensure(args: CliArgs) -> CliResult {
+    // 1. 인자 검증
+    var repo_name = get_positional(args, 0)
+    if repo_name == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Repository name is required"
+        }
+    }
+
+    // 2. 플래그 파싱
+    var is_private = has_flag(args, "private")
+    var description = get_flag(args, "description")
+
+    // 3. 설정 로드
+    var host = await get_default_host()
+    if host.url == "" {
+        return CliResult {
+            exit_code: 1,
+            output: "",
+            error: "Not logged in"
+        }
+    }
+
+    // 4. 클라이언트 및 캐시
+    var client = new_client(host.url, host.token)
+    var cache = new_cache(300)
+
+    // 5. 저장소 존재 확인
+    println("Checking if repository exists...")
+
+    var repo_service = new_repo_service(client, cache)
+    var check_result = await get_repo(repo_service, host.url, repo_name)
+
+    match check_result {
+        Result::Ok(repo) => {
+            // 저장소 존재 - 업데이트
+            println("Repository exists, updating...")
+
+            var req = CreateRepoRequest {
+                name: repo_name,
+                private: is_private,
+                description: description
+            }
+
+            var parts = split_repo_path(repo.full_name)
+            var owner = if length(parts) > 0 then parts[0] else ""
+
+            var update_result = await update_repo(repo_service, owner, repo_name, req)
+
+            match update_result {
+                Result::Ok(updated) => {
+                    CliResult {
+                        exit_code: 0,
+                        output: "✓ Repository ensured (updated)\n  " + updated.html_url,
+                        error: ""
+                    }
+                }
+                Result::Err(err) => {
+                    CliResult {
+                        exit_code: 1,
+                        output: "",
+                        error: error_message(err)
+                    }
+                }
+            }
+        }
+        Result::Err(_) => {
+            // 저장소 미존재 - 생성
+            println("Repository does not exist, creating...")
+
+            var req = CreateRepoRequest {
+                name: repo_name,
+                private: is_private,
+                description: description
+            }
+
+            var create_result = await create_repo(repo_service, req)
+
+            match create_result {
+                Result::Ok(created) => {
+                    CliResult {
+                        exit_code: 0,
+                        output: "✓ Repository ensured (created)\n  " + created.html_url,
+                        error: ""
+                    }
+                }
+                Result::Err(err) => {
+                    CliResult {
+                        exit_code: 1,
+                        output: "",
+                        error: error_message(err)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== 헬퍼 함수 ====================
+
+/// 저장소 경로 파싱
+fn split_repo_path(path: str) -> [str] {
+    var result: [str] = []
+
+    var slash_idx = indexOf(path, "/")
+    if slash_idx == -1 {
+        result.push(path)
+        return result
+    }
+
+    var owner = substring(path, 0, slash_idx)
+    var repo = substring(path, slash_idx + 1, length(path))
+
+    result.push(owner)
+    result.push(repo)
+
+    result
+}
+
+// ==================== 출력 포맷: 목록 ====================
+
+/// 저장소 목록 - 텍스트
+fn repo_list_text(repos: [Repo]) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                      Repository List                               ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+
+    if length(repos) == 0 {
+        output = output + "No repositories found\n"
+        return CliResult {
+            exit_code: 0,
+            output: output,
+            error: ""
+        }
+    }
+
+    var i: i32 = 0
+    while i < length(repos) {
+        var repo = repos[i]
+        var private_mark = if repo.private then "[P]" else "[O]"
+        output = output + private_mark + " " + repo.full_name + "\n"
+        output = output + "     " + repo.html_url + "\n"
+        if repo.description != "" {
+            output = output + "     " + repo.description + "\n"
+        }
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "Total: " + str(length(repos)) + " repositories\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+/// 저장소 목록 - JSON
+fn repo_list_json(repos: [Repo]) -> CliResult {
+    var json = "[\n"
+
+    var i: i32 = 0
+    while i < length(repos) {
+        var repo = repos[i]
+        json = json + "  {\n"
+        json = json + "    \"name\": \"" + repo.full_name + "\",\n"
+        json = json + "    \"url\": \"" + repo.html_url + "\",\n"
+        json = json + "    \"ssh\": \"" + repo.ssh_url + "\",\n"
+        json = json + "    \"private\": " + bool_to_json(repo.private) + ",\n"
+        json = json + "    \"description\": \"" + repo.description + "\"\n"
+        json = json + "  }"
+        if i < length(repos) - 1 {
+            json = json + ","
+        }
+        json = json + "\n"
+        i = i + 1
+    }
+
+    json = json + "]\n"
+
+    CliResult {
+        exit_code: 0,
+        output: json,
+        error: ""
+    }
+}
+
+/// 저장소 목록 - YAML
+fn repo_list_yaml(repos: [Repo]) -> CliResult {
+    var yaml = "repositories:\n"
+
+    var i: i32 = 0
+    while i < length(repos) {
+        var repo = repos[i]
+        yaml = yaml + "  - name: " + repo.full_name + "\n"
+        yaml = yaml + "    url: " + repo.html_url + "\n"
+        yaml = yaml + "    ssh: " + repo.ssh_url + "\n"
+        yaml = yaml + "    private: " + bool_to_str(repo.private) + "\n"
+        if repo.description != "" {
+            yaml = yaml + "    description: " + repo.description + "\n"
+        }
+        i = i + 1
+    }
+
+    CliResult {
+        exit_code: 0,
+        output: yaml,
+        error: ""
+    }
+}
+
+// ==================== 출력 포맷: 상세 ====================
+
+/// 저장소 상세 - 텍스트
+fn repo_view_text(repo: Repo) -> CliResult {
+    var output = ""
+    output = output + "╔════════════════════════════════════════════════════════════════════╗\n"
+    output = output + "║                    Repository Details                              ║\n"
+    output = output + "╚════════════════════════════════════════════════════════════════════╝\n"
+    output = output + "\n"
+    output = output + "Name:          " + repo.full_name + "\n"
+    output = output + "Description:   " + repo.description + "\n"
+    output = output + "URL:           " + repo.html_url + "\n"
+    output = output + "SSH:           " + repo.ssh_url + "\n"
+    output = output + "Private:       " + bool_to_str(repo.private) + "\n"
+    output = output + "Fork:          " + bool_to_str(repo.fork) + "\n"
+    output = output + "Default Branch: " + repo.default_branch + "\n"
+    output = output + "Owner:         " + repo.owner.login + "\n"
+    output = output + "Created:       " + repo.created_at + "\n"
+    output = output + "Updated:       " + repo.updated_at + "\n"
+    output = output + "\n"
+
+    CliResult {
+        exit_code: 0,
+        output: output,
+        error: ""
+    }
+}
+
+/// 저장소 상세 - JSON
+fn repo_view_json(repo: Repo) -> CliResult {
+    var json = "{\n"
+    json = json + "  \"name\": \"" + repo.full_name + "\",\n"
+    json = json + "  \"description\": \"" + repo.description + "\",\n"
+    json = json + "  \"url\": \"" + repo.html_url + "\",\n"
+    json = json + "  \"ssh\": \"" + repo.ssh_url + "\",\n"
+    json = json + "  \"private\": " + bool_to_json(repo.private) + ",\n"
+    json = json + "  \"fork\": " + bool_to_json(repo.fork) + ",\n"
+    json = json + "  \"default_branch\": \"" + repo.default_branch + "\",\n"
+    json = json + "  \"owner\": \"" + repo.owner.login + "\",\n"
+    json = json + "  \"created_at\": \"" + repo.created_at + "\",\n"
+    json = json + "  \"updated_at\": \"" + repo.updated_at + "\"\n"
+    json = json + "}\n"
+
+    CliResult {
+        exit_code: 0,
+        output: json,
+        error: ""
+    }
+}
+
+/// 저장소 상세 - YAML
+fn repo_view_yaml(repo: Repo) -> CliResult {
+    var yaml = "name: " + repo.full_name + "\n"
+    yaml = yaml + "description: " + repo.description + "\n"
+    yaml = yaml + "url: " + repo.html_url + "\n"
+    yaml = yaml + "ssh: " + repo.ssh_url + "\n"
+    yaml = yaml + "private: " + bool_to_str(repo.private) + "\n"
+    yaml = yaml + "fork: " + bool_to_str(repo.fork) + "\n"
+    yaml = yaml + "default_branch: " + repo.default_branch + "\n"
+    yaml = yaml + "owner: " + repo.owner.login + "\n"
+    yaml = yaml + "created_at: " + repo.created_at + "\n"
+    yaml = yaml + "updated_at: " + repo.updated_at + "\n"
+
+    CliResult {
+        exit_code: 0,
+        output: yaml,
+        error: ""
+    }
+}
+
+// ==================== 유틸리티 ====================
+
+fn bool_to_str(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+fn bool_to_json(b: bool) -> str {
+    if b { "true" } else { "false" }
+}
+
+fn indexOf(s: str, substr: str) -> i32 {
+    var i: i32 = 0
+    var len = length(s)
+    var sublen = length(substr)
+    while i <= len - sublen {
+        if substring(s, i, i + sublen) == substr { return i }
+        i = i + 1
+    }
+    -1
+}
+
+// 필요한 함수들:
+// - get_positional, has_flag, get_flag, get_format (from main.fl)
+// - get_default_host, new_client, new_cache
+// - new_repo_service, create_repo, list_repos, get_repo, update_repo, delete_repo
+// - error_message, bool_to_str, split_repo_path, indexOf, substring
