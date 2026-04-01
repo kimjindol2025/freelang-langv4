@@ -69,6 +69,9 @@ export class VM {
   private nextChannelId: number = 0;
   private databases: Map<number, DBAdapter> = new Map();
   private nextDbId: number = 0;
+  private httpServers: Map<number, any> = new Map(); // {app, server, requestQueue, nextReqId}
+  private nextServerId: number = 0;
+  private nextReqId: number = 0;
   private globals: Map<string, Value> = new Map();
   private output: string[] = [];
   private instructionCount: number = 0;
@@ -1476,6 +1479,54 @@ export class VM {
         }
       }
 
+      case "http_server_create": {
+        const port = (args[0] as any).val;
+        try {
+          const result = await this.httpServerCreateAsync(port);
+          return result;
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `HTTP server error: ${String(e)}` } };
+        }
+      }
+
+      case "http_server_accept": {
+        const serverId = (args[0] as any).val;
+        try {
+          const result = await this.httpServerAcceptAsync(serverId);
+          return result;
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `HTTP accept error: ${String(e)}` } };
+        }
+      }
+
+      case "http_server_respond": {
+        const serverId = (args[0] as any).val;
+        const reqId = (args[1] as any).val;
+        const status = (args[2] as any).val;
+        const headersJson = (args[3] as any).val;
+        const body = this.valueToString(args[4]);
+        try {
+          await this.httpServerRespondAsync(serverId, reqId, status, headersJson, body);
+          return { tag: "void" };
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `HTTP respond error: ${String(e)}` } };
+        }
+      }
+
+      case "exec_command": {
+        const cmd = (args[0] as any).val;
+        let cmdArgs: string[] = [];
+        if (args[1].tag === "arr") {
+          cmdArgs = (args[1] as any).val.map((v: Value) => this.valueToString(v));
+        }
+        try {
+          const result = await this.execCommandAsync(cmd, cmdArgs);
+          return result;
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `Command execution error: ${String(e)}` } };
+        }
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }
@@ -1776,6 +1827,133 @@ export class VM {
       const res = await fetch(url, options);
       const responseBody = await res.text();
       return { tag: "ok", val: { tag: "str", val: responseBody } };
+    } catch (e: any) {
+      return { tag: "err", val: { tag: "str", val: e.message } };
+    }
+  }
+
+  // ============================================================
+  // HTTP Server Builtins
+  // ============================================================
+
+  private async httpServerCreateAsync(port: number): Promise<Value> {
+    try {
+      const express = (await import("express")).default;
+      const app = express();
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: true }));
+
+      const requestQueue: Array<{ reqId: string; method: string; path: string; headers: any; body: any; query: any }> = [];
+      const responseMap: Map<string, any> = new Map(); // reqId -> res
+      let nextReqId = 0;
+
+      app.all("*", (req: any, res: any) => {
+        const reqId = String(nextReqId++);
+        const reqObj = {
+          reqId,
+          method: req.method,
+          path: req.path,
+          headers: req.headers,
+          body: req.body || {},
+          query: req.query || {},
+        };
+        requestQueue.push(reqObj);
+        responseMap.set(reqId, res);
+      });
+
+      const serverId = this.nextServerId++;
+      this.httpServers.set(serverId, {
+        app,
+        server: null,
+        requestQueue,
+        responseMap,
+        port,
+      });
+
+      // Start server
+      const server = app.listen(port);
+      const serverData = this.httpServers.get(serverId)!;
+      serverData.server = server;
+
+      return { tag: "i32", val: serverId };
+    } catch (e: any) {
+      return { tag: "err", val: { tag: "str", val: e.message } };
+    }
+  }
+
+  private async httpServerAcceptAsync(serverId: number): Promise<Value> {
+    const serverData = this.httpServers.get(serverId);
+    if (!serverData) {
+      return { tag: "err", val: { tag: "str", val: "Server not found" } };
+    }
+
+    // Poll for requests
+    while (serverData.requestQueue.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    const req = serverData.requestQueue.shift()!;
+
+    // Convert to Value struct
+    const fields = new Map<string, Value>();
+    fields.set("id", { tag: "str", val: req.reqId });
+    fields.set("method", { tag: "str", val: req.method });
+    fields.set("path", { tag: "str", val: req.path });
+    fields.set("query", { tag: "str", val: JSON.stringify(req.query) });
+    fields.set("body", { tag: "str", val: JSON.stringify(req.body) });
+
+    const reqValue = { tag: "struct" as const, fields };
+    return { tag: "ok", val: reqValue };
+  }
+
+  private async httpServerRespondAsync(serverId: number, reqId: string, status: number, headersJson: string, body: string): Promise<void> {
+    const serverData = this.httpServers.get(serverId);
+    if (!serverData) throw new Error("Server not found");
+
+    const res = serverData.responseMap.get(reqId);
+    if (!res) throw new Error(`Request ${reqId} not found`);
+
+    try {
+      const headers = JSON.parse(headersJson);
+      res.status(status);
+      Object.entries(headers).forEach(([k, v]: [string, any]) => {
+        res.set(k, v);
+      });
+      res.send(body);
+    } finally {
+      serverData.responseMap.delete(reqId);
+    }
+  }
+
+  private async execCommandAsync(cmd: string, args: string[]): Promise<Value> {
+    try {
+      const { spawn } = await import("child_process");
+      const proc = spawn(cmd, args);
+
+      let stdout = "";
+      let stderr = "";
+
+      return new Promise((resolve) => {
+        proc.stdout?.on("data", (data) => {
+          stdout += data.toString();
+        });
+
+        proc.stderr?.on("data", (data) => {
+          stderr += data.toString();
+        });
+
+        proc.on("close", (code) => {
+          if (code === 0) {
+            resolve({ tag: "ok", val: { tag: "str", val: stdout } });
+          } else {
+            resolve({ tag: "err", val: { tag: "str", val: stderr || `Exit code ${code}` } });
+          }
+        });
+
+        proc.on("error", (err) => {
+          resolve({ tag: "err", val: { tag: "str", val: err.message } });
+        });
+      });
     } catch (e: any) {
       return { tag: "err", val: { tag: "str", val: e.message } };
     }

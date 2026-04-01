@@ -1388,6 +1388,10 @@ export class Compiler {
         "now", "format_date", "parse_date",
         // YAML (2) - v4.3 Extension
         "yaml_parse", "yaml_stringify",
+        // HTTP Server (3) - gogs-server 지원
+        "http_server_create", "http_server_accept", "http_server_respond",
+        // External Commands (1)
+        "exec_command",
       ];
 
       if (builtins.includes(name)) {
