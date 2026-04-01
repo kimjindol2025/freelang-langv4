@@ -1561,6 +1561,9 @@ export class TypeChecker {
       case "abs": case "min": case "max": case "pow": case "sqrt":
         return null; // 인자 타입에 의존
       case "gcd": case "lcm": return { kind: "i32" };
+      // Bitwise Operations (A-1)
+      case "bitand": case "bitor": case "bitxor": case "shl": case "shr":
+        return { kind: "i32" };
 
       // Cryptography & Encoding (Phase 7)
       case "md5": case "sha256": case "sha512": case "hmac":

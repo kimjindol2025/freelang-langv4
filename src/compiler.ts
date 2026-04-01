@@ -1347,6 +1347,8 @@ export class Compiler {
         "char_at", "contains", "split", "trim", "to_upper", "to_lower",
         "abs", "min", "max", "pow", "sqrt",
         "range", "channel", "panic", "typeof", "assert",
+        // Bitwise Operations (5) - A-1
+        "bitand", "bitor", "bitxor", "shl", "shr",
         // Phase 7: 20 Core Libraries
         // Cryptography & Encoding (6)
         "md5", "sha256", "sha512", "base64_encode", "base64_decode", "hmac",

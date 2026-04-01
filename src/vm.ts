@@ -676,6 +676,16 @@ export class VM {
         return { tag: "void" };
       case "panic":
         throw new Error(`panic: ${this.valueToString(args[0])}`);
+      case "bitand":
+        return { tag: "i32", val: (args[0] as any).val & (args[1] as any).val };
+      case "bitor":
+        return { tag: "i32", val: (args[0] as any).val | (args[1] as any).val };
+      case "bitxor":
+        return { tag: "i32", val: (args[0] as any).val ^ (args[1] as any).val };
+      case "shl":
+        return { tag: "i32", val: (args[0] as any).val << (args[1] as any).val };
+      case "shr":
+        return { tag: "i32", val: (args[0] as any).val >> (args[1] as any).val };
       case "contains":
         if (args[0].tag === "str") {
           return { tag: "bool", val: args[0].val.includes((args[1] as any).val) };
