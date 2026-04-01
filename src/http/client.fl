@@ -1,0 +1,327 @@
+// FreeLang v4.2 — Gogs HTTP 클라이언트
+// REST API 통신의 기본 계층
+
+/// HTTP 클라이언트
+struct HttpClient {
+    base_url: str
+    token: str
+    timeout: i32  // 초 단위 (기본 30)
+}
+
+/// HTTP 응답 (파싱되지 않음)
+struct HttpResponse {
+    status: i32
+    body: str
+    headers: [HttpHeader]
+}
+
+/// HTTP 헤더
+struct HttpHeader {
+    name: str
+    value: str
+}
+
+/// HTTP 클라이언트 생성
+fn new_client(base_url: str, token: str) -> HttpClient {
+    HttpClient {
+        base_url: base_url,
+        token: token,
+        timeout: 30
+    }
+}
+
+/// 기본 요청 헤더 생성
+fn default_headers(token: str) -> [HttpHeader] {
+    var headers: [HttpHeader] = []
+
+    var ct = HttpHeader {
+        name: "Content-Type",
+        value: "application/json"
+    }
+    headers.push(ct)
+
+    if token != "" {
+        var auth = HttpHeader {
+            name: "Authorization",
+            value: "token " + token
+        }
+        headers.push(auth)
+    }
+
+    headers
+}
+
+/// 헤더 맵으로 변환 (fetch용)
+fn headers_to_object(headers: [HttpHeader]) -> {str: str} {
+    var obj: {str: str} = {}
+    var i: i32 = 0
+    while i < length(headers) {
+        obj[headers[i].name] = headers[i].value
+        i = i + 1
+    }
+    obj
+}
+
+/// URL 빌드
+fn build_url(base: str, path: str) -> str {
+    // base가 /로 끝나면 제거
+    var clean_base = base
+    if endsWith(base, "/") {
+        clean_base = substring(base, 0, length(base) - 1)
+    }
+
+    // path가 /로 시작하지 않으면 추가
+    var clean_path = path
+    if !startsWith(path, "/") {
+        clean_path = "/" + path
+    }
+
+    clean_base + clean_path
+}
+
+// ==================== GET 요청 ====================
+
+/// GET 요청 (비동기)
+async fn http_get(client: HttpClient, path: str) -> HttpResponse {
+    var url = build_url(client.base_url, path)
+    var headers = default_headers(client.token)
+    var headers_obj = headers_to_object(headers)
+
+    // fetch 호출
+    var resp = await fetch(url, "GET", headers_obj, null)
+
+    // 응답 파싱
+    return HttpResponse {
+        status: 200,  // TODO: 실제 상태 코드 추출
+        body: resp,
+        headers: []
+    }
+}
+
+/// GET 요청 (기존 fetch 래퍼)
+async fn get_request(url: str, token: str) -> str {
+    var headers: {str: str} = {}
+    headers["Content-Type"] = "application/json"
+    if token != "" {
+        headers["Authorization"] = "token " + token
+    }
+
+    await http_get_internal(url, headers)
+}
+
+// ==================== POST 요청 ====================
+
+/// POST 요청 (JSON 데이터)
+async fn http_post_json(client: HttpClient, path: str, data: str) -> HttpResponse {
+    var url = build_url(client.base_url, path)
+    var headers = default_headers(client.token)
+    var headers_obj = headers_to_object(headers)
+
+    // fetch 호출
+    var resp = await fetch(url, "POST", headers_obj, data)
+
+    return HttpResponse {
+        status: 201,  // TODO: 실제 상태 코드 추출
+        body: resp,
+        headers: []
+    }
+}
+
+/// POST 요청 (Object → JSON 변환)
+async fn http_post<T>(client: HttpClient, path: str, body: T) -> HttpResponse {
+    var json = json_stringify(body)
+    await http_post_json(client, path, json)
+}
+
+// ==================== PUT 요청 ====================
+
+/// PUT 요청 (전체 업데이트)
+async fn http_put<T>(client: HttpClient, path: str, body: T) -> HttpResponse {
+    var url = build_url(client.base_url, path)
+    var json = json_stringify(body)
+    var headers = default_headers(client.token)
+    var headers_obj = headers_to_object(headers)
+
+    var resp = await fetch(url, "PUT", headers_obj, json)
+
+    return HttpResponse {
+        status: 200,
+        body: resp,
+        headers: []
+    }
+}
+
+// ==================== DELETE 요청 ====================
+
+/// DELETE 요청
+async fn http_delete(client: HttpClient, path: str) -> HttpResponse {
+    var url = build_url(client.base_url, path)
+    var headers = default_headers(client.token)
+    var headers_obj = headers_to_object(headers)
+
+    var resp = await fetch(url, "DELETE", headers_obj, null)
+
+    return HttpResponse {
+        status: 204,
+        body: resp,
+        headers: []
+    }
+}
+
+// ==================== PATCH 요청 ====================
+
+/// PATCH 요청 (부분 업데이트)
+async fn http_patch<T>(client: HttpClient, path: str, body: T) -> HttpResponse {
+    var url = build_url(client.base_url, path)
+    var json = json_stringify(body)
+    var headers = default_headers(client.token)
+    var headers_obj = headers_to_object(headers)
+
+    var resp = await fetch(url, "PATCH", headers_obj, json)
+
+    return HttpResponse {
+        status: 200,
+        body: resp,
+        headers: []
+    }
+}
+
+// ==================== 응답 처리 ====================
+
+/// 응답을 JSON으로 파싱
+fn parse_response<T>(resp: HttpResponse) -> T {
+    // JSON 파싱
+    var obj = json_parse(resp.body)
+    obj as T
+}
+
+/// 응답 성공 확인
+fn is_success(status: i32) -> bool {
+    status >= 200 && status < 300
+}
+
+/// 응답 에러 여부
+fn is_error(status: i32) -> bool {
+    status >= 400
+}
+
+// ==================== 에러 처리 ====================
+
+/// 응답에서 에러 생성
+fn response_to_error(resp: HttpResponse) -> Error {
+    if resp.status == 404 {
+        return Error::NotFound(resp.body)
+    }
+    if resp.status == 400 {
+        return Error::BadRequest(resp.body)
+    }
+    if resp.status == 401 {
+        return Error::Unauthorized(resp.body)
+    }
+    if resp.status == 403 {
+        return Error::Forbidden(resp.body)
+    }
+    if resp.status >= 500 {
+        return Error::ServerError(resp.body)
+    }
+    if resp.status >= 400 {
+        return Error::HttpError(resp.status, resp.body)
+    }
+    Error::Unknown(resp.body)
+}
+
+// ==================== 높은 수준의 API ====================
+
+/// 저장소 목록 조회
+async fn list_repos(client: HttpClient) -> Result<[str]> {
+    var resp = await http_get(client, "/api/v1/user/repos")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // TODO: 실제 Repo 구조체로 파싱
+    Result::Ok([])
+}
+
+/// 저장소 조회
+async fn get_repo(client: HttpClient, owner: str, repo: str) -> Result<str> {
+    var path = "/api/v1/repos/" + owner + "/" + repo
+    var resp = await http_get(client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok(resp.body)
+}
+
+/// 저장소 생성
+async fn create_repo(client: HttpClient, name: str, private: bool, description: str) -> Result<str> {
+    var body = "{\"name\": \"" + name + "\", \"private\": " + str(private) + ", \"description\": \"" + description + "\"}"
+    var resp = await http_post_json(client, "/api/v1/user/repos", body)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok(resp.body)
+}
+
+/// 저장소 삭제
+async fn delete_repo(client: HttpClient, owner: str, repo: str) -> Result<str> {
+    var path = "/api/v1/repos/" + owner + "/" + repo
+    var resp = await http_delete(client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok("")
+}
+
+// ==================== 헬퍼 함수 ====================
+
+fn startsWith(s: str, prefix: str) -> bool {
+    var i: i32 = 0
+    while i < length(prefix) {
+        if char_at(s, i) != char_at(prefix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn endsWith(s: str, suffix: str) -> bool {
+    var s_len = length(s)
+    var suffix_len = length(suffix)
+    if suffix_len > s_len { return false }
+
+    var i: i32 = 0
+    while i < suffix_len {
+        if char_at(s, s_len - suffix_len + i) != char_at(suffix, i) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn substring(s: str, from: i32, to: i32) -> str {
+    var result = ""
+    var i: i32 = from
+    while i < to && i < length(s) {
+        result = result + char_at(s, i)
+        i = i + 1
+    }
+    result
+}
+
+// FreeLang 내장 함수 사용:
+// - fetch(url, method, headers, body) -> str (비동기)
+// - json_stringify(obj) -> str
+// - json_parse(str) -> any
+// - str(value) -> str
+// - char_at(str, index) -> str
+// - length(str) -> i32

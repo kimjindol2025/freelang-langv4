@@ -1,0 +1,356 @@
+// FreeLang v4.2 — Gogs CLI OrgService
+// 조직 관리 API 서비스
+// 250라인: list, get, create, update, delete, ensure
+
+/// 조직 서비스
+struct OrgService {
+    client: HttpClient
+    cache: CacheManager
+}
+
+/// OrgService 생성
+fn new_org_service(client: HttpClient, cache: CacheManager) -> OrgService {
+    OrgService {
+        client: client,
+        cache: cache
+    }
+}
+
+// ==================== 조직 CRUD ====================
+
+/// 조직 목록 조회
+async fn list_orgs(service: OrgService) -> Result<[Organization]> {
+    var cache_key = "orgs:list"
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: orgs list")
+        var orgs_arr = json_parse(cached) as [Organization]
+        return Result::Ok(orgs_arr)
+    }
+
+    // API 호출
+    var resp = await http_get(service.client, "/api/v1/user/orgs")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var orgs_arr = json_parse(resp.body) as [Organization]
+    Result::Ok(orgs_arr)
+}
+
+/// 조직 상세 조회
+async fn get_org(service: OrgService, name: str) -> Result<Organization> {
+    var cache_key = "org:" + name
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var org = json_parse(cached) as Organization
+        return Result::Ok(org)
+    }
+
+    // API 호출
+    var path = "/api/v1/orgs/" + name
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var org = json_parse(resp.body) as Organization
+    Result::Ok(org)
+}
+
+/// 조직 생성
+async fn create_org(service: OrgService, req: CreateOrgRequest) -> Result<Organization> {
+    var json_data = json_stringify(req)
+    var resp = await http_post_json(service.client, "/api/v1/orgs", json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    cache_invalidate(service.cache, "orgs:list")
+
+    // 파싱
+    var org = json_parse(resp.body) as Organization
+    Result::Ok(org)
+}
+
+/// 조직 업데이트
+async fn update_org(service: OrgService, name: str, req: UpdateOrgRequest) -> Result<Organization> {
+    var path = "/api/v1/orgs/" + name
+    var json_data = json_stringify(req)
+    var resp = await http_patch(service.client, path, json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "org:" + name
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "orgs:list")
+
+    // 파싱
+    var org = json_parse(resp.body) as Organization
+    Result::Ok(org)
+}
+
+/// 조직 삭제
+async fn delete_org(service: OrgService, name: str) -> Result<str> {
+    var path = "/api/v1/orgs/" + name
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "org:" + name
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "orgs:list")
+
+    Result::Ok("Organization deleted")
+}
+
+// ==================== Ensure 패턴 ====================
+
+/// 조직 ensure (멱등성 보증)
+async fn ensure_org(service: OrgService, req: CreateOrgRequest) -> Result<EnsureAction> {
+    var path = "/api/v1/orgs/" + req.username
+
+    // desired 상태 정의
+    var desired_json = json_stringify(req)
+
+    var ctx = EnsureContext {
+        name: req.username,
+
+        get_fn: async fn() -> Result<str> {
+            var resp = await http_get(service.client, path)
+            if is_error(resp.status) {
+                if resp.status == 404 {
+                    Result::Ok("")  // 없음
+                } else {
+                    Result::Err(response_to_error(resp))
+                }
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        create_fn: async fn() -> Result<str> {
+            var json_data = json_stringify(req)
+            var resp = await http_post_json(service.client, "/api/v1/orgs", json_data)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                cache_invalidate(service.cache, "orgs:list")
+                Result::Ok(resp.body)
+            }
+        },
+
+        update_fn: async fn(changes: [str]) -> Result<str> {
+            var update_req = UpdateOrgRequest {
+                full_name: req.full_name,
+                email: req.email,
+                website: req.website,
+                location: req.location,
+                bio: req.bio
+            }
+            var json_data = json_stringify(update_req)
+            var resp = await http_patch(service.client, path, json_data)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                var cache_key = "org:" + req.username
+                cache_invalidate(service.cache, cache_key)
+                cache_invalidate(service.cache, "orgs:list")
+                Result::Ok(resp.body)
+            }
+        },
+
+        delete_fn: async fn() -> Result<str> {
+            var resp = await http_delete(service.client, path)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                var cache_key = "org:" + req.username
+                cache_invalidate(service.cache, cache_key)
+                cache_invalidate(service.cache, "orgs:list")
+                Result::Ok("")
+            }
+        },
+
+        desired: desired_json
+    }
+
+    var action = await ensure(ctx)
+    Result::Ok(action)
+}
+
+// ==================== 조직 멤버 ====================
+
+/// 조직 멤버 목록
+async fn list_org_members(service: OrgService, org_name: str) -> Result<[User]> {
+    var cache_key = "org_members:" + org_name
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var members_arr = json_parse(cached) as [User]
+        return Result::Ok(members_arr)
+    }
+
+    // API 호출
+    var path = "/api/v1/orgs/" + org_name + "/members"
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var members_arr = json_parse(resp.body) as [User]
+    Result::Ok(members_arr)
+}
+
+/// 조직 멤버 추가
+async fn add_org_member(service: OrgService, org_name: str, username: str) -> Result<str> {
+    var path = "/api/v1/orgs/" + org_name + "/members/" + username
+    var resp = await http_put(service.client, path, "{}")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "org_members:" + org_name
+    cache_invalidate(service.cache, cache_key)
+
+    Result::Ok("Member added to organization")
+}
+
+/// 조직 멤버 제거
+async fn remove_org_member(service: OrgService, org_name: str, username: str) -> Result<str> {
+    var path = "/api/v1/orgs/" + org_name + "/members/" + username
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "org_members:" + org_name
+    cache_invalidate(service.cache, cache_key)
+
+    Result::Ok("Member removed from organization")
+}
+
+// ==================== 조직 저장소 ====================
+
+/// 조직 저장소 목록
+async fn list_org_repos(service: OrgService, org_name: str) -> Result<[Repo]> {
+    var cache_key = "org_repos:" + org_name
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var repos_arr = json_parse(cached) as [Repo]
+        return Result::Ok(repos_arr)
+    }
+
+    // API 호출
+    var path = "/api/v1/orgs/" + org_name + "/repos"
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var repos_arr = json_parse(resp.body) as [Repo]
+    Result::Ok(repos_arr)
+}
+
+// ==================== 조직 검색 ====================
+
+/// 조직 검색
+async fn search_orgs(service: OrgService, query: str) -> Result<[Organization]> {
+    var path = "/api/v1/orgs/search?q=" + query
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 파싱
+    var orgs_arr = json_parse(resp.body) as [Organization]
+    Result::Ok(orgs_arr)
+}
+
+// ==================== 별명 (Alias) ====================
+
+/// 조직 목록 조회 (별명)
+async fn list_all_orgs(service: OrgService) -> Result<[Organization]> {
+    await list_orgs(service)
+}
+
+/// 조직 생성 (별명)
+async fn new_org(service: OrgService, name: str, full_name: str) -> Result<Organization> {
+    var req = CreateOrgRequest {
+        username: name,
+        full_name: full_name,
+        email: "",
+        website: "",
+        location: "",
+        bio: ""
+    }
+    await create_org(service, req)
+}
+
+/// 조직 삭제 (별명)
+async fn rm_org(service: OrgService, name: str) -> Result<str> {
+    await delete_org(service, name)
+}
+
+// UpdateOrgRequest 모델 정의
+struct UpdateOrgRequest {
+    full_name: str
+    email: str
+    website: str
+    location: str
+    bio: str
+}
+
+// 필요한 함수들 (다른 모듈에서 임포트):
+// - http_get, http_post_json, http_delete, http_patch, http_put
+// - is_error, response_to_error
+// - cache_get, cache_set, cache_invalidate
+// - json_stringify, json_parse
+// - ensure, EnsureContext, EnsureAction
+// - println, length

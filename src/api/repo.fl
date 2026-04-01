@@ -1,0 +1,394 @@
+// FreeLang v4.2 — Gogs CLI RepoService
+// 저장소 관리 API 서비스
+// 400라인: list, get, create, update, delete, ensure, fork, list_branches
+
+/// 저장소 서비스
+struct RepoService {
+    client: HttpClient
+    cache: CacheManager
+}
+
+/// RepoService 생성
+fn new_repo_service(client: HttpClient, cache: CacheManager) -> RepoService {
+    RepoService {
+        client: client,
+        cache: cache
+    }
+}
+
+// ==================== 저장소 CRUD ====================
+
+/// 저장소 목록 조회 (캐시 활용)
+async fn list_repos(service: RepoService) -> Result<[Repo]> {
+    var cache_key = "repos:list"
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: repos list")
+        var repos_arr = json_parse(cached) as [Repo]
+        return Result::Ok(repos_arr)
+    }
+
+    // API 호출
+    var resp = await http_get(service.client, "/api/v1/user/repos")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var repos_arr = json_parse(resp.body) as [Repo]
+    Result::Ok(repos_arr)
+}
+
+/// 저장소 상세 조회 (캐시 활용)
+async fn get_repo(service: RepoService, owner: str, name: str) -> Result<Repo> {
+    var cache_key = "repo:" + owner + "/" + name
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var repo = json_parse(cached) as Repo
+        return Result::Ok(repo)
+    }
+
+    // API 호출
+    var path = "/api/v1/repos/" + owner + "/" + name
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var repo = json_parse(resp.body) as Repo
+    Result::Ok(repo)
+}
+
+/// 저장소 생성
+async fn create_repo(service: RepoService, req: CreateRepoRequest) -> Result<Repo> {
+    var json_data = json_stringify(req)
+    var resp = await http_post_json(service.client, "/api/v1/user/repos", json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    cache_invalidate(service.cache, "repos:list")
+
+    // 파싱
+    var repo = json_parse(resp.body) as Repo
+    Result::Ok(repo)
+}
+
+/// 저장소 업데이트
+async fn update_repo(service: RepoService, owner: str, name: str, req: CreateRepoRequest) -> Result<Repo> {
+    var path = "/api/v1/repos/" + owner + "/" + name
+    var json_data = json_stringify(req)
+    var resp = await http_patch(service.client, path, json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "repo:" + owner + "/" + name
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "repos:list")
+
+    // 파싱
+    var repo = json_parse(resp.body) as Repo
+    Result::Ok(repo)
+}
+
+/// 저장소 삭제
+async fn delete_repo(service: RepoService, owner: str, name: str) -> Result<str> {
+    var path = "/api/v1/repos/" + owner + "/" + name
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "repo:" + owner + "/" + name
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "repos:list")
+
+    Result::Ok("Repository deleted")
+}
+
+// ==================== Ensure 패턴 ====================
+
+/// 저장소 ensure (멱등성 보증)
+async fn ensure_repo(service: RepoService, owner: str, req: CreateRepoRequest) -> Result<EnsureAction> {
+    var path = "/api/v1/repos/" + owner + "/" + req.name
+
+    // desired 상태 정의
+    var desired_json = json_stringify(req)
+
+    var ctx = EnsureContext {
+        name: owner + "/" + req.name,
+
+        get_fn: async fn() -> Result<str> {
+            var resp = await http_get(service.client, path)
+            if is_error(resp.status) {
+                if resp.status == 404 {
+                    Result::Ok("")  // 없음
+                } else {
+                    Result::Err(response_to_error(resp))
+                }
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        create_fn: async fn() -> Result<str> {
+            var json_data = json_stringify(req)
+            var resp = await http_post_json(service.client, "/api/v1/user/repos", json_data)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                cache_invalidate(service.cache, "repos:list")
+                Result::Ok(resp.body)
+            }
+        },
+
+        update_fn: async fn(changes: [str]) -> Result<str> {
+            var json_data = json_stringify(req)
+            var resp = await http_patch(service.client, path, json_data)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                var cache_key = "repo:" + owner + "/" + req.name
+                cache_invalidate(service.cache, cache_key)
+                cache_invalidate(service.cache, "repos:list")
+                Result::Ok(resp.body)
+            }
+        },
+
+        delete_fn: async fn() -> Result<str> {
+            var resp = await http_delete(service.client, path)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                var cache_key = "repo:" + owner + "/" + req.name
+                cache_invalidate(service.cache, cache_key)
+                cache_invalidate(service.cache, "repos:list")
+                Result::Ok("")
+            }
+        },
+
+        desired: desired_json
+    }
+
+    var action = await ensure(ctx)
+    Result::Ok(action)
+}
+
+// ==================== 저장소 포크 ====================
+
+/// 저장소 포크
+async fn fork_repo(service: RepoService, owner: str, name: str, new_owner: str) -> Result<Repo> {
+    var path = "/api/v1/repos/" + owner + "/" + name + "/forks"
+
+    // 포크 요청 본문
+    var body_str = "{\"owner\": \"" + new_owner + "\"}"
+    var resp = await http_post_json(service.client, path, body_str)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화 (사용자 저장소 목록)
+    cache_invalidate(service.cache, "repos:list")
+
+    // 파싱
+    var repo = json_parse(resp.body) as Repo
+    Result::Ok(repo)
+}
+
+// ==================== 브랜치 관리 ====================
+
+/// 저장소 브랜치 목록
+async fn list_branches(service: RepoService, owner: str, name: str) -> Result<[Branch]> {
+    var cache_key = "branches:" + owner + "/" + name
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var branches_arr = json_parse(cached) as [Branch]
+        return Result::Ok(branches_arr)
+    }
+
+    // API 호출
+    var path = "/api/v1/repos/" + owner + "/" + name + "/branches"
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var branches_arr = json_parse(resp.body) as [Branch]
+    Result::Ok(branches_arr)
+}
+
+// ==================== 저장소 통계 ====================
+
+/// 저장소 통계 조회
+async fn get_repo_stats(service: RepoService, owner: str, name: str) -> Result<RepoStats> {
+    var path = "/api/v1/repos/" + owner + "/" + name + "/stats"
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 파싱
+    var stats = json_parse(resp.body) as RepoStats
+    Result::Ok(stats)
+}
+
+// ==================== 저장소 검색 ====================
+
+/// 저장소 검색
+async fn search_repos(service: RepoService, query: str) -> Result<[Repo]> {
+    var path = "/api/v1/repos/search?q=" + query
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 파싱
+    var repos_arr = json_parse(resp.body) as [Repo]
+    Result::Ok(repos_arr)
+}
+
+// ==================== 저장소 권한 ====================
+
+/// 저장소 협업자 추가
+async fn add_collaborator(
+    service: RepoService,
+    owner: str,
+    name: str,
+    username: str,
+    permission: str
+) -> Result<str> {
+    var path = "/api/v1/repos/" + owner + "/" + name + "/collaborators/" + username
+    var body_str = "{\"permission\": \"" + permission + "\"}"
+    var resp = await http_put(service.client, path, body_str)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok("Collaborator added")
+}
+
+/// 저장소 협업자 제거
+async fn remove_collaborator(service: RepoService, owner: str, name: str, username: str) -> Result<str> {
+    var path = "/api/v1/repos/" + owner + "/" + name + "/collaborators/" + username
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok("Collaborator removed")
+}
+
+// ==================== 저장소 이슈 ====================
+
+/// 저장소 이슈 수 조회
+async fn get_issue_count(service: RepoService, owner: str, name: str) -> Result<i32> {
+    var path = "/api/v1/repos/" + owner + "/" + name + "/issues"
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 이슈 배열 파싱
+    var issues_arr = json_parse(resp.body) as [Issue]
+    Result::Ok(length(issues_arr))
+}
+
+// ==================== 별명 (Alias) ====================
+
+/// 저장소 목록 조회 (별명)
+async fn list_all_repos(service: RepoService) -> Result<[Repo]> {
+    await list_repos(service)
+}
+
+/// 저장소 상세 조회 (별명)
+async fn get_single_repo(service: RepoService, owner: str, name: str) -> Result<Repo> {
+    await get_repo(service, owner, name)
+}
+
+/// 저장소 생성 (별명)
+async fn new_repo(service: RepoService, name: str, description: str, private: bool) -> Result<Repo> {
+    var req = CreateRepoRequest {
+        name: name,
+        description: description,
+        private: private
+    }
+    await create_repo(service, req)
+}
+
+/// 저장소 삭제 (별명)
+async fn rm_repo(service: RepoService, owner: str, name: str) -> Result<str> {
+    await delete_repo(service, owner, name)
+}
+
+// Branch 모델 정의
+struct Branch {
+    name: str
+    commit: Commit
+    protected: bool
+}
+
+struct Commit {
+    id: str
+    message: str
+    author: Author
+}
+
+struct Author {
+    name: str
+    email: str
+}
+
+// RepoStats 모델 정의
+struct RepoStats {
+    total_commits: i32
+    total_branches: i32
+    total_tags: i32
+    total_issues: i32
+    total_pull_requests: i32
+}
+
+// 필요한 함수들 (다른 모듈에서 임포트):
+// - http_get, http_post_json, http_delete, http_patch, http_put
+// - is_error, response_to_error
+// - cache_get, cache_set, cache_invalidate
+// - json_stringify, json_parse
+// - ensure, EnsureContext, EnsureAction
+// - println, length

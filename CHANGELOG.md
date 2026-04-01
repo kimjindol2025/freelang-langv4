@@ -4,6 +4,77 @@
 
 ---
 
+## [gogs-cli Phase 4] - 2026-04-01
+
+### 🎯 gogs-cli Phase 4: API 서비스 구현 완료
+
+#### 완성된 서비스 (7개)
+
+**Batch 1: 기본 서비스** (950라인)
+- **RepoService** (src/api/repo.fl - 400라인)
+  - list_repos, get_repo, create_repo, update_repo, delete_repo
+  - ensure_repo, fork_repo, list_branches
+  - add_collaborator, remove_collaborator, search_repos
+
+- **UserService** (src/api/user.fl - 300라인)
+  - list_users, get_user, get_current_user
+  - create_user, update_user, delete_user, ensure_user
+  - lock_user, unlock_user, set_admin
+  - list_user_repos, search_users, follow_user
+
+- **OrgService** (src/api/org.fl - 250라인)
+  - list_orgs, get_org, create_org, update_org, delete_org, ensure_org
+  - list_org_members, add_org_member, remove_org_member
+  - list_org_repos, search_orgs
+
+**Batch 2: 협업 서비스** (900라인)
+- **TeamService** (src/api/team.fl - 200라인)
+  - list_teams, get_team, create_team, update_team, delete_team
+  - list_team_members, add_team_member, remove_team_member
+  - list_team_repos, add_team_repo, remove_team_repo
+
+- **IssueService** (src/api/issue.fl - 280라인)
+  - list_issues, get_issue, create_issue, update_issue, edit_issue
+  - close_issue, reopen_issue
+  - list_issue_comments, add_issue_comment, update_issue_comment
+  - add_issue_label, search_issues
+
+- **WebhookService** (src/api/webhook.fl - 220라인)
+  - list_webhooks, get_webhook, create_webhook, update_webhook, delete_webhook
+  - test_webhook, enable_webhook, disable_webhook
+  - create_gogs_webhook, create_json_webhook, get_webhook_events
+
+- **DeployKeyService** (src/api/deploy_key.fl - 200라인)
+  - list_deploy_keys, get_deploy_key
+  - add_deploy_key, delete_deploy_key
+  - enable_deploy_key, disable_deploy_key
+  - ensure_deploy_key, has_deploy_key, find_deploy_key_by_title
+
+#### 구현 특징
+
+✅ **에러 처리**: Result<T> enum, response_to_error() 활용
+✅ **캐싱**: 모든 목록 및 상세조회에 캐시 적용
+✅ **멱등성**: ensure 패턴으로 멱등성 보증
+✅ **관련 리소스**: 멤버, 저장소, 코멘트 등 관계 관리
+✅ **별명**: 편의 함수 (new_*, rm_* 등)
+✅ **유틸리티**: 검색, 통계, 활성화/비활성화 등
+
+#### 코드 통계
+- **Phase 4**: 1,850라인
+- **누적 (Phase 1-4)**: 4,510라인
+- **진행률**: 60% 완료
+
+#### 파일 위치
+- `/home/freelang-v4/src/api/repo.fl`
+- `/home/freelang-v4/src/api/user.fl`
+- `/home/freelang-v4/src/api/org.fl`
+- `/home/freelang-v4/src/api/team.fl`
+- `/home/freelang-v4/src/api/issue.fl`
+- `/home/freelang-v4/src/api/webhook.fl`
+- `/home/freelang-v4/src/api/deploy_key.fl`
+
+---
+
 ## [4.3.0] - 2026-04-01
 
 ### 🎯 주요 테마

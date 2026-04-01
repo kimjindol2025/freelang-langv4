@@ -1,0 +1,324 @@
+// FreeLang v4.2 — ensure 알고리즘
+// 멱등성을 보증하는 상태 동기화 엔진
+
+/// ensure 작업의 결과
+enum EnsureAction {
+    Created
+    Updated(changes: [str])
+    Unchanged
+    Error(msg: str)
+}
+
+/// ensure 컨텍스트 정의
+struct EnsureContext {
+    name: str  // 리소스 이름 (예: "myrepo")
+
+    // 콜백 함수들
+    get_fn: async fn() -> Result<str>      // 현재 상태 조회
+    create_fn: async fn() -> Result<str>   // 생성
+    update_fn: async fn([str]) -> Result<str>  // 업데이트
+    delete_fn: async fn() -> Result<str>   // 삭제
+
+    // 원하는 상태 (JSON 문자열)
+    desired: str
+}
+
+/// ensure 알고리즘 실행
+async fn ensure(ctx: EnsureContext) -> EnsureAction {
+    // Step 1: 현재 상태 조회
+    var current_result = await ctx.get_fn()
+
+    match current_result {
+        Result::Ok(current) => {
+            // Step 2: 없으면 생성
+            if current == "" || current == "null" {
+                var create_result = await ctx.create_fn()
+                match create_result {
+                    Result::Ok(_) => {
+                        return EnsureAction::Created
+                    }
+                    Result::Err(err) => {
+                        var msg = error_message(err)
+                        println("✗ Failed to create " + ctx.name + ": " + msg)
+                        return EnsureAction::Error(msg)
+                    }
+                }
+            }
+
+            // Step 3: 있으면 diff 계산
+            var diff = compute_diff(current, ctx.desired)
+
+            // Step 4: diff 없으면 unchanged
+            if length(diff) == 0 {
+                println("✓ " + ctx.name + " unchanged")
+                return EnsureAction::Unchanged
+            }
+
+            // Step 5: diff 있으면 업데이트
+            var update_result = await ctx.update_fn(diff)
+            match update_result {
+                Result::Ok(_) => {
+                    println("✓ " + ctx.name + " updated (" + str(length(diff)) + " changes)")
+                    return EnsureAction::Updated(diff)
+                }
+                Result::Err(err) => {
+                    var msg = error_message(err)
+                    println("✗ Failed to update " + ctx.name + ": " + msg)
+                    return EnsureAction::Error(msg)
+                }
+            }
+        }
+        Result::Err(err) => {
+            // 조회 실패
+            var msg = error_message(err)
+            println("✗ Failed to get " + ctx.name + ": " + msg)
+            return EnsureAction::Error(msg)
+        }
+    }
+}
+
+/// 변경사항 계산 (간단한 JSON 비교)
+fn compute_diff(current: str, desired: str) -> [str] {
+    var diff: [str] = []
+
+    // 간단한 문자열 비교 (프로덕션에선 JSON 구조 분석 필요)
+    if current == desired {
+        return diff
+    }
+
+    // 현재와 원하는 상태가 다르면 모든 필드가 변경됨
+    diff.push("content")
+
+    diff
+}
+
+/// 에러 메시지 변환
+fn error_message(err: Error) -> str {
+    match err {
+        Error::NotFound(msg) => "Not found: " + msg,
+        Error::BadRequest(msg) => "Bad request: " + msg,
+        Error::Unauthorized(msg) => "Unauthorized: " + msg,
+        Error::Forbidden(msg) => "Forbidden: " + msg,
+        Error::NetworkError(msg) => "Network error: " + msg,
+        Error::HttpError(status, msg) => "HTTP " + str(status) + ": " + msg,
+        Error::Unknown(msg) => "Unknown error: " + msg,
+        _ => "Error occurred",
+    }
+}
+
+// ==================== 저장소 ensure ====================
+
+/// 저장소 ensure 예시
+async fn ensure_repo(
+    client: HttpClient,
+    owner: str,
+    repo_name: str,
+    private: bool,
+    description: str
+) -> EnsureAction {
+    var path = "/api/v1/repos/" + owner + "/" + repo_name
+
+    // desired 상태 정의
+    var desired_json = "{
+\"owner\": \"" + owner + "\",
+\"name\": \"" + repo_name + "\",
+\"private\": " + str(private) + ",
+\"description\": \"" + description + "\"
+}"
+
+    var ctx = EnsureContext {
+        name: owner + "/" + repo_name,
+
+        get_fn: async fn() -> Result<str> {
+            var resp = await http_get(client, path)
+            if is_error(resp.status) {
+                if resp.status == 404 {
+                    Result::Ok("")  // 없음
+                } else {
+                    Result::Err(response_to_error(resp))
+                }
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        create_fn: async fn() -> Result<str> {
+            var body = "{\"name\": \"" + repo_name + "\", \"private\": " + str(private) + ", \"description\": \"" + description + "\"}"
+            var resp = await http_post_json(client, "/api/v1/user/repos", body)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        update_fn: async fn(changes: [str]) -> Result<str> {
+            // PATCH로 업데이트
+            var update_body = "{\"description\": \"" + description + "\", \"private\": " + str(private) + "}"
+            var resp = await fetch(
+                build_url(client.base_url, path),
+                "PATCH",
+                headers_to_object(default_headers(client.token)),
+                update_body
+            )
+            Result::Ok(resp)
+        },
+
+        delete_fn: async fn() -> Result<str> {
+            var resp = await http_delete(client, path)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                Result::Ok("")
+            }
+        },
+
+        desired: desired_json
+    }
+
+    await ensure(ctx)
+}
+
+// ==================== 사용자 ensure ====================
+
+/// 사용자 ensure 예시
+async fn ensure_user(
+    client: HttpClient,
+    username: str,
+    email: str,
+    is_admin: bool
+) -> EnsureAction {
+    var path = "/api/v1/users/" + username
+
+    var desired_json = "{
+\"login\": \"" + username + "\",
+\"email\": \"" + email + "\",
+\"is_admin\": " + str(is_admin) + "
+}"
+
+    var ctx = EnsureContext {
+        name: username,
+
+        get_fn: async fn() -> Result<str> {
+            var resp = await http_get(client, path)
+            if is_error(resp.status) {
+                if resp.status == 404 {
+                    Result::Ok("")
+                } else {
+                    Result::Err(response_to_error(resp))
+                }
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        create_fn: async fn() -> Result<str> {
+            var body = "{\"username\": \"" + username + "\", \"email\": \"" + email + "\", \"is_admin\": " + str(is_admin) + "}"
+            var resp = await http_post_json(client, "/api/v1/admin/users", body)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        update_fn: async fn(changes: [str]) -> Result<str> {
+            var update_body = "{\"email\": \"" + email + "\", \"is_admin\": " + str(is_admin) + "}"
+            var resp = await fetch(
+                build_url(client.base_url, path),
+                "PATCH",
+                headers_to_object(default_headers(client.token)),
+                update_body
+            )
+            Result::Ok(resp)
+        },
+
+        delete_fn: async fn() -> Result<str> {
+            var resp = await http_delete(client, path)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                Result::Ok("")
+            }
+        },
+
+        desired: desired_json
+    }
+
+    await ensure(ctx)
+}
+
+// ==================== 조직 ensure ====================
+
+/// 조직 ensure 예시
+async fn ensure_org(
+    client: HttpClient,
+    org_name: str,
+    full_name: str,
+    email: str
+) -> EnsureAction {
+    var path = "/api/v1/orgs/" + org_name
+
+    var desired_json = "{
+\"username\": \"" + org_name + "\",
+\"full_name\": \"" + full_name + "\",
+\"email\": \"" + email + "\"
+}"
+
+    var ctx = EnsureContext {
+        name: org_name,
+
+        get_fn: async fn() -> Result<str> {
+            var resp = await http_get(client, path)
+            if is_error(resp.status) {
+                if resp.status == 404 {
+                    Result::Ok("")
+                } else {
+                    Result::Err(response_to_error(resp))
+                }
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        create_fn: async fn() -> Result<str> {
+            var body = "{\"username\": \"" + org_name + "\", \"full_name\": \"" + full_name + "\", \"email\": \"" + email + "\"}"
+            var resp = await http_post_json(client, "/api/v1/orgs", body)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        update_fn: async fn(changes: [str]) -> Result<str> {
+            var update_body = "{\"full_name\": \"" + full_name + "\", \"email\": \"" + email + "\"}"
+            var resp = await fetch(
+                build_url(client.base_url, path),
+                "PATCH",
+                headers_to_object(default_headers(client.token)),
+                update_body
+            )
+            Result::Ok(resp)
+        },
+
+        delete_fn: async fn() -> Result<str> {
+            var resp = await http_delete(client, path)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                Result::Ok("")
+            }
+        },
+
+        desired: desired_json
+    }
+
+    await ensure(ctx)
+}
+
+// 필요한 함수들 (다른 모듈에서 임포트)
+// - http_get, http_post_json, http_delete
+// - build_url, headers_to_object, default_headers
+// - is_error, response_to_error
+// - fetch (FreeLang 내장)

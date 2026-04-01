@@ -1,0 +1,385 @@
+// FreeLang v4.2 — Gogs CLI UserService
+// 사용자 관리 API 서비스
+// 300라인: list, get, create, update, delete, ensure, lock, unlock
+
+/// 사용자 서비스
+struct UserService {
+    client: HttpClient
+    cache: CacheManager
+}
+
+/// UserService 생성
+fn new_user_service(client: HttpClient, cache: CacheManager) -> UserService {
+    UserService {
+        client: client,
+        cache: cache
+    }
+}
+
+// ==================== 사용자 CRUD ====================
+
+/// 사용자 목록 조회 (관리자 전용)
+async fn list_users(service: UserService) -> Result<[User]> {
+    var cache_key = "users:list"
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: users list")
+        var users_arr = json_parse(cached) as [User]
+        return Result::Ok(users_arr)
+    }
+
+    // API 호출 (관리자 권한 필요)
+    var resp = await http_get(service.client, "/api/v1/admin/users")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var users_arr = json_parse(resp.body) as [User]
+    Result::Ok(users_arr)
+}
+
+/// 사용자 상세 조회
+async fn get_user(service: UserService, username: str) -> Result<User> {
+    var cache_key = "user:" + username
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var user = json_parse(cached) as User
+        return Result::Ok(user)
+    }
+
+    // API 호출
+    var path = "/api/v1/users/" + username
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var user = json_parse(resp.body) as User
+    Result::Ok(user)
+}
+
+/// 현재 사용자 정보 조회
+async fn get_current_user(service: UserService) -> Result<User> {
+    var cache_key = "user:current"
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: current user")
+        var user = json_parse(cached) as User
+        return Result::Ok(user)
+    }
+
+    // API 호출
+    var resp = await http_get(service.client, "/api/v1/user")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var user = json_parse(resp.body) as User
+    Result::Ok(user)
+}
+
+/// 사용자 생성 (관리자 전용)
+async fn create_user(service: UserService, req: CreateUserRequest) -> Result<User> {
+    var json_data = json_stringify(req)
+    var resp = await http_post_json(service.client, "/api/v1/admin/users", json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    cache_invalidate(service.cache, "users:list")
+
+    // 파싱
+    var user = json_parse(resp.body) as User
+    Result::Ok(user)
+}
+
+/// 사용자 업데이트 (관리자 전용)
+async fn update_user(service: UserService, username: str, req: UpdateUserRequest) -> Result<User> {
+    var path = "/api/v1/admin/users/" + username
+    var json_data = json_stringify(req)
+    var resp = await http_patch(service.client, path, json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "user:" + username
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "users:list")
+
+    // 파싱
+    var user = json_parse(resp.body) as User
+    Result::Ok(user)
+}
+
+/// 사용자 삭제 (관리자 전용)
+async fn delete_user(service: UserService, username: str) -> Result<str> {
+    var path = "/api/v1/admin/users/" + username
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "user:" + username
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "users:list")
+
+    Result::Ok("User deleted")
+}
+
+// ==================== Ensure 패턴 ====================
+
+/// 사용자 ensure (멱등성 보증)
+async fn ensure_user(service: UserService, req: CreateUserRequest) -> Result<EnsureAction> {
+    var path = "/api/v1/users/" + req.username
+
+    // desired 상태 정의
+    var desired_json = json_stringify(req)
+
+    var ctx = EnsureContext {
+        name: req.username,
+
+        get_fn: async fn() -> Result<str> {
+            var resp = await http_get(service.client, path)
+            if is_error(resp.status) {
+                if resp.status == 404 {
+                    Result::Ok("")  // 없음
+                } else {
+                    Result::Err(response_to_error(resp))
+                }
+            } else {
+                Result::Ok(resp.body)
+            }
+        },
+
+        create_fn: async fn() -> Result<str> {
+            var json_data = json_stringify(req)
+            var resp = await http_post_json(service.client, "/api/v1/admin/users", json_data)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                cache_invalidate(service.cache, "users:list")
+                Result::Ok(resp.body)
+            }
+        },
+
+        update_fn: async fn(changes: [str]) -> Result<str> {
+            var update_req = UpdateUserRequest {
+                email: req.email,
+                is_admin: req.is_admin
+            }
+            var json_data = json_stringify(update_req)
+            var resp = await http_patch(service.client, path, json_data)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                var cache_key = "user:" + req.username
+                cache_invalidate(service.cache, cache_key)
+                cache_invalidate(service.cache, "users:list")
+                Result::Ok(resp.body)
+            }
+        },
+
+        delete_fn: async fn() -> Result<str> {
+            var resp = await http_delete(service.client, path)
+            if is_error(resp.status) {
+                Result::Err(response_to_error(resp))
+            } else {
+                // 캐시 무효화
+                var cache_key = "user:" + req.username
+                cache_invalidate(service.cache, cache_key)
+                cache_invalidate(service.cache, "users:list")
+                Result::Ok("")
+            }
+        },
+
+        desired: desired_json
+    }
+
+    var action = await ensure(ctx)
+    Result::Ok(action)
+}
+
+// ==================== 사용자 계정 관리 ====================
+
+/// 사용자 잠금 (관리자 전용)
+async fn lock_user(service: UserService, username: str) -> Result<str> {
+    var path = "/api/v1/admin/users/" + username + "/lock"
+    var resp = await http_put(service.client, path, "{}")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "user:" + username
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "users:list")
+
+    Result::Ok("User locked")
+}
+
+/// 사용자 잠금 해제 (관리자 전용)
+async fn unlock_user(service: UserService, username: str) -> Result<str> {
+    var path = "/api/v1/admin/users/" + username + "/lock"
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "user:" + username
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "users:list")
+
+    Result::Ok("User unlocked")
+}
+
+/// 사용자 권한 변경
+async fn set_admin(service: UserService, username: str, is_admin: bool) -> Result<User> {
+    var req = UpdateUserRequest {
+        email: "",
+        is_admin: is_admin
+    }
+    await update_user(service, username, req)
+}
+
+// ==================== 사용자 저장소 ====================
+
+/// 사용자 저장소 목록
+async fn list_user_repos(service: UserService, username: str) -> Result<[Repo]> {
+    var cache_key = "user_repos:" + username
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var repos_arr = json_parse(cached) as [Repo]
+        return Result::Ok(repos_arr)
+    }
+
+    // API 호출
+    var path = "/api/v1/users/" + username + "/repos"
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var repos_arr = json_parse(resp.body) as [Repo]
+    Result::Ok(repos_arr)
+}
+
+// ==================== 사용자 검색 ====================
+
+/// 사용자 검색
+async fn search_users(service: UserService, query: str) -> Result<[User]> {
+    var path = "/api/v1/users/search?q=" + query
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 파싱
+    var users_arr = json_parse(resp.body) as [User]
+    Result::Ok(users_arr)
+}
+
+// ==================== 사용자 팔로우 ====================
+
+/// 사용자 팔로우
+async fn follow_user(service: UserService, username: str) -> Result<str> {
+    var path = "/api/v1/user/following/" + username
+    var resp = await http_put(service.client, path, "{}")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok("Following user")
+}
+
+/// 사용자 팔로우 해제
+async fn unfollow_user(service: UserService, username: str) -> Result<str> {
+    var path = "/api/v1/user/following/" + username
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok("Unfollowing user")
+}
+
+// ==================== 별명 (Alias) ====================
+
+/// 사용자 목록 조회 (별명)
+async fn list_all_users(service: UserService) -> Result<[User]> {
+    await list_users(service)
+}
+
+/// 사용자 생성 (별명)
+async fn new_user(service: UserService, username: str, email: str, password: str) -> Result<User> {
+    var req = CreateUserRequest {
+        username: username,
+        email: email,
+        password: password,
+        send_notify: true,
+        is_admin: false
+    }
+    await create_user(service, req)
+}
+
+/// 사용자 삭제 (별명)
+async fn rm_user(service: UserService, username: str) -> Result<str> {
+    await delete_user(service, username)
+}
+
+// UpdateUserRequest 모델 정의
+struct UpdateUserRequest {
+    email: str
+    is_admin: bool
+}
+
+// 필요한 함수들 (다른 모듈에서 임포트):
+// - http_get, http_post_json, http_delete, http_patch, http_put
+// - is_error, response_to_error
+// - cache_get, cache_set, cache_invalidate
+// - json_stringify, json_parse
+// - ensure, EnsureContext, EnsureAction
+// - println, length

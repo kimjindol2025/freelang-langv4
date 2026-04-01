@@ -1,0 +1,273 @@
+// FreeLang v4.2 — Gogs CLI WebhookService
+// 웹훅 관리 API 서비스
+// 200라인: create, list, get, delete, update, test
+
+/// 웹훅 서비스
+struct WebhookService {
+    client: HttpClient
+    cache: CacheManager
+}
+
+/// WebhookService 생성
+fn new_webhook_service(client: HttpClient, cache: CacheManager) -> WebhookService {
+    WebhookService {
+        client: client,
+        cache: cache
+    }
+}
+
+// ==================== 웹훅 CRUD ====================
+
+/// 웹훅 목록 조회 (저장소 단위)
+async fn list_webhooks(service: WebhookService, owner: str, repo: str) -> Result<[Webhook]> {
+    var cache_key = "webhooks:" + owner + "/" + repo
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var webhooks_arr = json_parse(cached) as [Webhook]
+        return Result::Ok(webhooks_arr)
+    }
+
+    // API 호출
+    var path = "/api/v1/repos/" + owner + "/" + repo + "/hooks"
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var webhooks_arr = json_parse(resp.body) as [Webhook]
+    Result::Ok(webhooks_arr)
+}
+
+/// 웹훅 상세 조회
+async fn get_webhook(service: WebhookService, owner: str, repo: str, hook_id: i32) -> Result<Webhook> {
+    var cache_key = "webhook:" + owner + "/" + repo + "/" + str(hook_id)
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: " + cache_key)
+        var webhook = json_parse(cached) as Webhook
+        return Result::Ok(webhook)
+    }
+
+    // API 호출
+    var path = "/api/v1/repos/" + owner + "/" + repo + "/hooks/" + str(hook_id)
+    var resp = await http_get(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var webhook = json_parse(resp.body) as Webhook
+    Result::Ok(webhook)
+}
+
+/// 웹훅 생성
+async fn create_webhook(service: WebhookService, owner: str, repo: str, req: CreateWebhookRequest) -> Result<Webhook> {
+    var path = "/api/v1/repos/" + owner + "/" + repo + "/hooks"
+    var json_data = json_stringify(req)
+    var resp = await http_post_json(service.client, path, json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    cache_invalidate(service.cache, "webhooks:" + owner + "/" + repo)
+
+    // 파싱
+    var webhook = json_parse(resp.body) as Webhook
+    Result::Ok(webhook)
+}
+
+/// 웹훅 업데이트
+async fn update_webhook(service: WebhookService, owner: str, repo: str, hook_id: i32, req: UpdateWebhookRequest) -> Result<Webhook> {
+    var path = "/api/v1/repos/" + owner + "/" + repo + "/hooks/" + str(hook_id)
+    var json_data = json_stringify(req)
+    var resp = await http_patch(service.client, path, json_data)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "webhook:" + owner + "/" + repo + "/" + str(hook_id)
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "webhooks:" + owner + "/" + repo)
+
+    // 파싱
+    var webhook = json_parse(resp.body) as Webhook
+    Result::Ok(webhook)
+}
+
+/// 웹훅 삭제
+async fn delete_webhook(service: WebhookService, owner: str, repo: str, hook_id: i32) -> Result<str> {
+    var path = "/api/v1/repos/" + owner + "/" + repo + "/hooks/" + str(hook_id)
+    var resp = await http_delete(service.client, path)
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 무효화
+    var cache_key = "webhook:" + owner + "/" + repo + "/" + str(hook_id)
+    cache_invalidate(service.cache, cache_key)
+    cache_invalidate(service.cache, "webhooks:" + owner + "/" + repo)
+
+    Result::Ok("Webhook deleted")
+}
+
+// ==================== 웹훅 테스트 ====================
+
+/// 웹훅 테스트
+async fn test_webhook(service: WebhookService, owner: str, repo: str, hook_id: i32) -> Result<str> {
+    var path = "/api/v1/repos/" + owner + "/" + repo + "/hooks/" + str(hook_id) + "/tests"
+    var resp = await http_post_json(service.client, path, "{}")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    Result::Ok("Webhook test triggered")
+}
+
+// ==================== 웹훅 활성화/비활성화 ====================
+
+/// 웹훅 활성화
+async fn enable_webhook(service: WebhookService, owner: str, repo: str, hook_id: i32) -> Result<Webhook> {
+    var req = UpdateWebhookRequest {
+        url: "",
+        content_type: "",
+        events: [],
+        active: true
+    }
+    await update_webhook(service, owner, repo, hook_id, req)
+}
+
+/// 웹훅 비활성화
+async fn disable_webhook(service: WebhookService, owner: str, repo: str, hook_id: i32) -> Result<Webhook> {
+    var req = UpdateWebhookRequest {
+        url: "",
+        content_type: "",
+        events: [],
+        active: false
+    }
+    await update_webhook(service, owner, repo, hook_id, req)
+}
+
+// ==================== 웹훅 이벤트 ====================
+
+/// 기본 웹훅 이벤트 목록
+fn get_default_webhook_events() -> [str] {
+    var events: [str] = []
+    events.push("push")
+    events.push("pull_request")
+    events.push("issues")
+    events.push("commit_comment")
+    events.push("pull_request_review_comment")
+    events.push("create")
+    events.push("delete")
+    events.push("deployment")
+    events.push("fork")
+    events.push("gollum")
+    events.push("page_build")
+    events.push("public")
+    events.push("release")
+    events
+}
+
+/// 웹훅 이벤트 목록 조회
+async fn get_webhook_events(service: WebhookService) -> Result<[str]> {
+    var cache_key = "webhook_events"
+
+    // 캐시 확인
+    var cached = cache_get(service.cache, cache_key)
+    if cached != "" {
+        println("[cache] hit: webhook_events")
+        var events_arr = json_parse(cached) as [str]
+        return Result::Ok(events_arr)
+    }
+
+    // API 호출
+    var resp = await http_get(service.client, "/api/v1/repos/events")
+
+    if is_error(resp.status) {
+        return Result::Err(response_to_error(resp))
+    }
+
+    // 캐시 저장
+    cache_set(service.cache, cache_key, resp.body)
+
+    // 파싱
+    var events_arr = json_parse(resp.body) as [str]
+    Result::Ok(events_arr)
+}
+
+// ==================== 웹훅 기본 설정 ====================
+
+/// Gogs 호환 기본 웹훅 생성
+async fn create_gogs_webhook(service: WebhookService, owner: str, repo: str, webhook_url: str) -> Result<Webhook> {
+    var req = CreateWebhookRequest {
+        url: webhook_url,
+        content_type: "json",
+        events: get_default_webhook_events(),
+        active: true
+    }
+    await create_webhook(service, owner, repo, req)
+}
+
+/// JSON 콘텐츠 타입으로 웹훅 생성
+async fn create_json_webhook(service: WebhookService, owner: str, repo: str, webhook_url: str, events: [str]) -> Result<Webhook> {
+    var req = CreateWebhookRequest {
+        url: webhook_url,
+        content_type: "json",
+        events: events,
+        active: true
+    }
+    await create_webhook(service, owner, repo, req)
+}
+
+// ==================== 별명 (Alias) ====================
+
+/// 웹훅 생성 (별명)
+async fn new_webhook(service: WebhookService, owner: str, repo: str, url: str) -> Result<Webhook> {
+    var req = CreateWebhookRequest {
+        url: url,
+        content_type: "json",
+        events: get_default_webhook_events(),
+        active: true
+    }
+    await create_webhook(service, owner, repo, req)
+}
+
+/// 웹훅 삭제 (별명)
+async fn rm_webhook(service: WebhookService, owner: str, repo: str, hook_id: i32) -> Result<str> {
+    await delete_webhook(service, owner, repo, hook_id)
+}
+
+// UpdateWebhookRequest 모델 정의
+struct UpdateWebhookRequest {
+    url: str
+    content_type: str
+    events: [str]
+    active: bool
+}
+
+// 필요한 함수들 (다른 모듈에서 임포트):
+// - http_get, http_post_json, http_delete, http_patch
+// - is_error, response_to_error
+// - cache_get, cache_set, cache_invalidate
+// - json_stringify, json_parse
+// - println, length, str

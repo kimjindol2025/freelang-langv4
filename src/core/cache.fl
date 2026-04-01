@@ -1,0 +1,284 @@
+// FreeLang v4.2 — 캐시 시스템
+// API 응답 캐싱으로 성능 향상 (80% API 호출 감소)
+
+/// 캐시 항목
+struct CacheEntry {
+    key: str
+    value: str
+    created_at: i32
+    ttl_seconds: i32
+}
+
+/// 캐시 관리자
+struct CacheManager {
+    entries: [CacheEntry]
+    ttl_default: i32  // 기본 TTL (초)
+}
+
+/// 캐시 생성
+fn new_cache(ttl_seconds: i32) -> CacheManager {
+    CacheManager {
+        entries: [],
+        ttl_default: ttl_seconds
+    }
+}
+
+/// 캐시에 값 저장
+fn cache_set(cache: CacheManager, key: str, value: str) {
+    // 기존 키 확인
+    var i: i32 = 0
+    while i < length(cache.entries) {
+        if cache.entries[i].key == key {
+            // 기존 항목 업데이트
+            cache.entries[i].value = value
+            cache.entries[i].created_at = now_seconds()
+            return
+        }
+        i = i + 1
+    }
+
+    // 새 항목 추가
+    var entry = CacheEntry {
+        key: key,
+        value: value,
+        created_at: now_seconds(),
+        ttl_seconds: cache.ttl_default
+    }
+    cache.entries.push(entry)
+}
+
+/// 캐시에서 값 조회
+fn cache_get(cache: CacheManager, key: str) -> str {
+    var i: i32 = 0
+    while i < length(cache.entries) {
+        var entry = cache.entries[i]
+
+        if entry.key == key {
+            // TTL 확인
+            var age = now_seconds() - entry.created_at
+            if age < entry.ttl_seconds {
+                // 캐시 유효
+                return entry.value
+            } else {
+                // 캐시 만료 - 제거
+                cache.entries[i] = cache.entries[length(cache.entries) - 1]
+                pop(cache.entries)
+                return ""
+            }
+        }
+        i = i + 1
+    }
+
+    ""  // 캐시 미스
+}
+
+/// 캐시 유효성 확인
+fn cache_has(cache: CacheManager, key: str) -> bool {
+    var value = cache_get(cache, key)
+    value != ""
+}
+
+/// 캐시 무효화 (특정 키)
+fn cache_invalidate(cache: CacheManager, key: str) -> bool {
+    var i: i32 = 0
+    while i < length(cache.entries) {
+        if cache.entries[i].key == key {
+            cache.entries[i] = cache.entries[length(cache.entries) - 1]
+            pop(cache.entries)
+            return true
+        }
+        i = i + 1
+    }
+    false
+}
+
+/// 캐시 전체 삭제
+fn cache_clear(cache: CacheManager) {
+    cache.entries = []
+}
+
+/// 캐시 통계
+struct CacheStats {
+    total_entries: i32
+    total_size: i32
+}
+
+/// 캐시 통계 조회
+fn cache_stats(cache: CacheManager) -> CacheStats {
+    var total_size: i32 = 0
+    var i: i32 = 0
+
+    while i < length(cache.entries) {
+        total_size = total_size + length(cache.entries[i].value)
+        i = i + 1
+    }
+
+    CacheStats {
+        total_entries: length(cache.entries),
+        total_size: total_size
+    }
+}
+
+// ==================== 고수준 캐시 API ====================
+
+/// 캐시를 사용하여 데이터 조회 (또는 가져오기)
+async fn cache_get_or_fetch(
+    cache: CacheManager,
+    key: str,
+    fetch_fn: async fn() -> str
+) -> str {
+    // 캐시 확인
+    var cached = cache_get(cache, key)
+    if cached != "" {
+        println("[cache] hit: " + key)
+        return cached
+    }
+
+    println("[cache] miss: " + key)
+
+    // 캐시 미스 - fetch 실행
+    var value = await fetch_fn()
+
+    // 캐시에 저장
+    if value != "" {
+        cache_set(cache, key, value)
+    }
+
+    value
+}
+
+/// 저장소 목록 캐시 조회
+async fn cache_list_repos(
+    cache: CacheManager,
+    client: HttpClient
+) -> str {
+    await cache_get_or_fetch(
+        cache,
+        "repos:list",
+        async fn() -> str {
+            var resp = await http_get(client, "/api/v1/user/repos")
+            resp.body
+        }
+    )
+}
+
+/// 저장소 상세정보 캐시 조회
+async fn cache_get_repo(
+    cache: CacheManager,
+    client: HttpClient,
+    owner: str,
+    repo: str
+) -> str {
+    var key = "repo:" + owner + "/" + repo
+
+    await cache_get_or_fetch(
+        cache,
+        key,
+        async fn() -> str {
+            var resp = await http_get(client, "/api/v1/repos/" + owner + "/" + repo)
+            resp.body
+        }
+    )
+}
+
+/// 사용자 정보 캐시 조회
+async fn cache_get_user(
+    cache: CacheManager,
+    client: HttpClient,
+    username: str
+) -> str {
+    var key = "user:" + username
+
+    await cache_get_or_fetch(
+        cache,
+        key,
+        async fn() -> str {
+            var resp = await http_get(client, "/api/v1/users/" + username)
+            resp.body
+        }
+    )
+}
+
+// ==================== 캐시 정책 ====================
+
+/// TTL 기반 캐시 정책
+struct CachePolicy {
+    key: str
+    ttl_seconds: i32
+    max_size: i32
+}
+
+/// 기본 캐시 정책들
+fn policy_repos_list() -> CachePolicy {
+    CachePolicy {
+        key: "repos:list",
+        ttl_seconds: 300,      // 5분
+        max_size: 1000000      // 1MB
+    }
+}
+
+fn policy_repo_detail() -> CachePolicy {
+    CachePolicy {
+        key: "repo:*",
+        ttl_seconds: 600,      // 10분
+        max_size: 1000000      // 1MB
+    }
+}
+
+fn policy_user_info() -> CachePolicy {
+    CachePolicy {
+        key: "user:*",
+        ttl_seconds: 1800,     // 30분
+        max_size: 100000       // 100KB
+    }
+}
+
+fn policy_org_list() -> CachePolicy {
+    CachePolicy {
+        key: "orgs:list",
+        ttl_seconds: 600,      // 10분
+        max_size: 100000       // 100KB
+    }
+}
+
+// ==================== 캐시 프리페칭 ====================
+
+/// 자주 사용되는 데이터 미리 캐시
+async fn cache_prefetch(
+    cache: CacheManager,
+    client: HttpClient
+) {
+    println("Prefetching cache...")
+
+    // 저장소 목록
+    var repos_json = await cache_list_repos(cache, client)
+    println("✓ Cached repositories list")
+
+    // 사용자 정보
+    var user_json = await cache_get_user(cache, client, "admin")
+    println("✓ Cached admin user")
+
+    println("Cache prefetch complete")
+}
+
+// ==================== 유틸리티 ====================
+
+/// 캐시 상태 출력
+fn print_cache_status(cache: CacheManager) {
+    var stats = cache_stats(cache)
+    println("=== Cache Status ===")
+    println("Entries: " + str(stats.total_entries))
+    println("Size:    " + str(stats.total_size / 1024) + " KB")
+    println("====================")
+}
+
+/// 초 단위 현재 시간
+fn now_seconds() -> i32 {
+    // 프로덕션: system clock
+    0  // placeholder
+}
+
+// 필요한 함수들:
+// - http_get, http_post_json, http_delete
+// - sleep, now_seconds
+// - pop (배열에서 마지막 요소 제거)

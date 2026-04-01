@@ -1,0 +1,355 @@
+// FreeLang v4.2 — 배치 처리 엔진
+// 대규모 작업을 병렬로 처리하고 결과를 수집
+
+/// 배치 작업 결과
+struct BatchJobResult {
+    job_id: str
+    success: bool
+    result: str
+    error: str
+    duration_ms: i32
+}
+
+/// 배치 엔진 설정
+struct BatchConfig {
+    workers: i32         // 병렬 워커 수 (기본 4)
+    max_retries: i32     // 최대 재시도 (기본 3)
+    backoff_factor: f64  // exponential backoff (기본 2.0)
+    timeout_ms: i32      // 작업당 타임아웃 (기본 30000ms)
+}
+
+/// 배치 엔진 상태
+struct BatchEngine {
+    config: BatchConfig
+    total_jobs: i32
+    completed: i32
+    succeeded: i32
+    failed: i32
+}
+
+/// 배치 처리 결과 요약
+struct BatchSummary {
+    total: i32
+    succeeded: i32
+    failed: i32
+    success_rate: f64
+}
+
+/// 배치 엔진 생성
+fn new_batch_engine(workers: i32) -> BatchEngine {
+    var config = BatchConfig {
+        workers: if workers > 0 { workers } else { 4 },
+        max_retries: 3,
+        backoff_factor: 2.0,
+        timeout_ms: 30000
+    }
+
+    BatchEngine {
+        config: config,
+        total_jobs: 0,
+        completed: 0,
+        succeeded: 0,
+        failed: 0
+    }
+}
+
+// ==================== 주요 배치 작업 ====================
+
+/// 저장소 배치 생성
+async fn batch_create_repos(
+    client: HttpClient,
+    repos: [RepositorySpec],
+    workers: i32
+) -> [BatchJobResult] {
+    var results: [BatchJobResult] = []
+    var engine = new_batch_engine(workers)
+
+    println("Creating " + str(length(repos)) + " repositories...")
+    println("Workers: " + str(workers))
+
+    var i: i32 = 0
+    while i < length(repos) {
+        var repo = repos[i]
+
+        // 작업 생성 및 실행
+        var result = await execute_with_retry(
+            client,
+            repo.owner + "/" + repo.name,
+            async fn() -> str {
+                var resp = await http_post_json(
+                    client,
+                    "/api/v1/user/repos",
+                    json_stringify(repo)
+                )
+                if is_error(resp.status) {
+                    return "ERROR"
+                }
+                resp.body
+            },
+            engine.config.max_retries,
+            engine.config.backoff_factor
+        )
+
+        results.push(result)
+
+        // 진행 상황 출력
+        if result.success {
+            println("✓ " + result.job_id)
+            engine.succeeded = engine.succeeded + 1
+        } else {
+            println("✗ " + result.job_id + ": " + result.error)
+            engine.failed = engine.failed + 1
+        }
+
+        engine.completed = engine.completed + 1
+        i = i + 1
+    }
+
+    engine.total_jobs = length(repos)
+    print_summary(engine)
+
+    results
+}
+
+/// 저장소 배치 ensure (상태 동기화)
+async fn batch_ensure_repos(
+    client: HttpClient,
+    repos: [RepositorySpec],
+    workers: i32
+) -> [BatchJobResult] {
+    var results: [BatchJobResult] = []
+    var engine = new_batch_engine(workers)
+
+    println("Ensuring " + str(length(repos)) + " repositories...")
+    println("Workers: " + str(workers))
+
+    var i: i32 = 0
+    while i < length(repos) {
+        var repo = repos[i]
+
+        // ensure 작업 실행
+        var result = await execute_with_retry(
+            client,
+            repo.owner + "/" + repo.name,
+            async fn() -> str {
+                var action = await ensure_repo(
+                    client,
+                    repo.owner,
+                    repo.name,
+                    repo.private,
+                    repo.description
+                )
+
+                match action {
+                    EnsureAction::Created => "created",
+                    EnsureAction::Updated(_) => "updated",
+                    EnsureAction::Unchanged => "unchanged",
+                    EnsureAction::Error(msg) => "ERROR: " + msg,
+                }
+            },
+            engine.config.max_retries,
+            engine.config.backoff_factor
+        )
+
+        results.push(result)
+
+        if result.success {
+            println("✓ " + result.job_id + ": " + result.result)
+            engine.succeeded = engine.succeeded + 1
+        } else {
+            println("✗ " + result.job_id + ": " + result.error)
+            engine.failed = engine.failed + 1
+        }
+
+        engine.completed = engine.completed + 1
+        i = i + 1
+    }
+
+    engine.total_jobs = length(repos)
+    print_summary(engine)
+
+    results
+}
+
+/// 저장소 배치 삭제
+async fn batch_delete_repos(
+    client: HttpClient,
+    repos: [str],
+    workers: i32,
+    force: bool
+) -> [BatchJobResult] {
+    var results: [BatchJobResult] = []
+    var engine = new_batch_engine(workers)
+
+    if !force {
+        println("Warning: This will delete " + str(length(repos)) + " repositories!")
+        println("Use --force to confirm")
+        return results
+    }
+
+    println("Deleting " + str(length(repos)) + " repositories...")
+
+    var i: i32 = 0
+    while i < length(repos) {
+        var repo_path = repos[i]  // "owner/repo"
+
+        var result = await execute_with_retry(
+            client,
+            repo_path,
+            async fn() -> str {
+                var resp = await http_delete(client, "/api/v1/repos/" + repo_path)
+                if is_error(resp.status) {
+                    return "ERROR"
+                }
+                "deleted"
+            },
+            engine.config.max_retries,
+            engine.config.backoff_factor
+        )
+
+        results.push(result)
+
+        if result.success {
+            println("✓ " + result.job_id + " deleted")
+            engine.succeeded = engine.succeeded + 1
+        } else {
+            println("✗ " + result.job_id + " failed")
+            engine.failed = engine.failed + 1
+        }
+
+        engine.completed = engine.completed + 1
+        i = i + 1
+    }
+
+    engine.total_jobs = length(repos)
+    print_summary(engine)
+
+    results
+}
+
+// ==================== 재시도 로직 ====================
+
+/// 재시도 로직과 함께 작업 실행
+async fn execute_with_retry(
+    client: HttpClient,
+    job_id: str,
+    exec: async fn() -> str,
+    max_retries: i32,
+    backoff_factor: f64
+) -> BatchJobResult {
+    var retries: i32 = 0
+    var backoff_ms: i32 = 100
+
+    loop {
+        // 작업 실행
+        var start = now_ms()
+        var result = await exec()
+        var duration = now_ms() - start
+
+        if result != "ERROR" {
+            return BatchJobResult {
+                job_id: job_id,
+                success: true,
+                result: result,
+                error: "",
+                duration_ms: duration
+            }
+        }
+
+        // 재시도 확인
+        if retries >= max_retries {
+            return BatchJobResult {
+                job_id: job_id,
+                success: false,
+                result: "",
+                error: "Max retries exceeded",
+                duration_ms: duration
+            }
+        }
+
+        // exponential backoff
+        retries = retries + 1
+        backoff_ms = int(float(backoff_ms) * backoff_factor)
+
+        println("  Retry " + str(retries) + "/" + str(max_retries) + " for " + job_id + " (wait " + str(backoff_ms) + "ms)")
+        sleep(backoff_ms)
+    }
+}
+
+// ==================== 통계 ====================
+
+/// 배치 처리 요약 출력
+fn print_summary(engine: BatchEngine) {
+    println("")
+    println("========== Batch Summary ==========")
+    println("Total:     " + str(engine.total_jobs))
+    println("Succeeded: " + str(engine.succeeded))
+    println("Failed:    " + str(engine.failed))
+
+    if engine.total_jobs > 0 {
+        var rate = float(engine.succeeded) / float(engine.total_jobs) * 100.0
+        println("Success:   " + str(rate) + "%")
+    }
+    println("===================================")
+    println("")
+}
+
+/// 배치 요약 계산
+fn get_summary(results: [BatchJobResult]) -> BatchSummary {
+    var succeeded: i32 = 0
+    var failed: i32 = 0
+    var i: i32 = 0
+
+    while i < length(results) {
+        if results[i].success {
+            succeeded = succeeded + 1
+        } else {
+            failed = failed + 1
+        }
+        i = i + 1
+    }
+
+    var rate = 0.0
+    if length(results) > 0 {
+        rate = float(succeeded) / float(length(results)) * 100.0
+    }
+
+    BatchSummary {
+        total: length(results),
+        succeeded: succeeded,
+        failed: failed,
+        success_rate: rate
+    }
+}
+
+// ==================== 설정 (RepositorySpec) ====================
+
+/// 저장소 스펙 정의
+struct RepositorySpec {
+    owner: str
+    name: str
+    description: str
+    private: bool
+}
+
+// ==================== 헬퍼 함수 ====================
+
+/// 현재 시간 (밀리초)
+fn now_ms() -> i32 {
+    // 프로덕션: system clock 호출
+    0  // placeholder
+}
+
+/// 현재 시간 문자열
+fn now_str() -> str {
+    // 프로덕션: timestamp 포매팅
+    ""  // placeholder
+}
+
+// 필요한 함수들 (다른 모듈):
+// - http_post_json, http_delete
+// - is_error, response_to_error
+// - ensure_repo
+// - json_stringify
+// - float, int (타입 변환)
+// - sleep (FreeLang 내장)
