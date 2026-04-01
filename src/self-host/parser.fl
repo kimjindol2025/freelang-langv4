@@ -1,0 +1,580 @@
+// ============================================================
+// FreeLang v4 Self-Hosting Parser (parser.fl)
+// Tree-walking interpreter - Parse phase
+// ============================================================
+
+// ============================================================
+// AST Node Types (Enums)
+// ============================================================
+
+struct Expr {
+  kind: str  // "int", "float", "string", "ident", "binary", "unary", "call", "array", "index", "match", "struct"
+  // Payload fields (union-like behavior):
+  // - kind="int": val_int: i32
+  // - kind="float": val_float: f64
+  // - kind="string": val_string: str
+  // - kind="ident": name: str
+  // - kind="binary": left: Expr, op: str, right: Expr
+  // - kind="unary": op: str, expr: Expr
+  // - kind="call": name: str, args: [Expr]
+  // - kind="array": elements: [Expr]
+  // - kind="index": expr: Expr, index: Expr
+  // - kind="match": subject: Expr, cases: [MatchCase]
+  // - kind="struct": name: str, fields: [StructField]
+  // - kind="if": cond: Expr, then_expr: Expr, else_expr: Expr
+}
+
+struct Stmt {
+  kind: str  // "var", "let", "return", "expr", "if", "while", "for", "block"
+  // Payload fields (union-like):
+  // - kind="var": name: str, value: Expr, ty: str
+  // - kind="let": name: str, value: Expr
+  // - kind="return": value: Expr
+  // - kind="expr": expr: Expr
+  // - kind="if": cond: Expr, then_block: [Stmt], else_block: [Stmt]
+  // - kind="while": cond: Expr, body: [Stmt]
+  // - kind="for": var: str, start: Expr, end: Expr, body: [Stmt]
+  // - kind="block": stmts: [Stmt]
+}
+
+struct Decl {
+  kind: str  // "fn", "struct"
+  // - kind="fn": name: str, params: [Param], body: [Stmt], return_type: str
+  // - kind="struct": name: str, fields: [StructField]
+}
+
+struct Param {
+  name: str
+  ty: str
+}
+
+struct StructField {
+  name: str
+  ty: str
+  value: Expr  // For struct literals
+}
+
+struct MatchCase {
+  pattern: str  // Constructor name or pattern
+  vars: [str]   // Variables bound in pattern
+  body: [Stmt]
+}
+
+// ============================================================
+// Parser (Struct)
+// ============================================================
+
+struct Parser {
+  tokens: [Token]
+  pos: i32
+}
+
+// ============================================================
+// Helper Functions
+// ============================================================
+
+fn parser_new(tokens: [Token]) -> Parser {
+  return Parser { tokens: tokens, pos: 0 }
+}
+
+fn parser_current(parser: Parser) -> Token {
+  if parser.pos >= length(parser.tokens) {
+    return Token { kind: "EOF", value: "", line: 0 }
+  }
+  return parser.tokens[parser.pos]
+}
+
+fn parser_peek(parser: Parser, offset: i32) -> Token {
+  var p = parser.pos + offset
+  if p >= length(parser.tokens) {
+    return Token { kind: "EOF", value: "", line: 0 }
+  }
+  return parser.tokens[p]
+}
+
+fn parser_advance(parser: Parser) -> Parser {
+  return Parser { tokens: parser.tokens, pos: parser.pos + 1 }
+}
+
+fn parser_expect(parser: Parser, kind: str) -> Parser {
+  var current = parser_current(parser)
+  if current.kind != kind {
+    panic("Expected " + kind + " but got " + current.kind)
+  }
+  return parser_advance(parser)
+}
+
+fn parser_check(parser: Parser, kind: str) -> bool {
+  return parser_current(parser).kind == kind
+}
+
+fn parser_match(parser: Parser, kinds: [str]) -> bool {
+  var i = 0
+  while i < length(kinds) {
+    if parser_check(parser, kinds[i]) {
+      return true
+    }
+    i = i + 1
+  }
+  return false
+}
+
+// ============================================================
+// Expression Parsing (Precedence Climbing)
+// ============================================================
+
+fn parse_expr(parser: Parser) -> Expr {
+  return parse_ternary(parser)
+}
+
+fn parse_ternary(parser: Parser) -> Expr {
+  var expr = parse_or(parser)
+  // TODO: handle ? :
+  return expr
+}
+
+fn parse_or(parser: Parser) -> Expr {
+  var parser_ref = parser
+  var left = parse_and(parser_ref)
+
+  while parser_check(parser_ref, "OR") {
+    parser_ref = parser_advance(parser_ref)
+    var right = parse_and(parser_ref)
+    left = Expr { kind: "binary", val_left: left, val_op: "||", val_right: right }
+  }
+
+  return left
+}
+
+fn parse_and(parser: Parser) -> Expr {
+  var parser_ref = parser
+  var left = parse_equality(parser_ref)
+
+  while parser_check(parser_ref, "AND") {
+    parser_ref = parser_advance(parser_ref)
+    var right = parse_equality(parser_ref)
+    left = Expr { kind: "binary", val_left: left, val_op: "&&", val_right: right }
+  }
+
+  return left
+}
+
+fn parse_equality(parser: Parser) -> Expr {
+  var parser_ref = parser
+  var left = parse_comparison(parser_ref)
+
+  while parser_match(parser_ref, ["EQ", "NEQ"]) {
+    var op_token = parser_current(parser_ref)
+    parser_ref = parser_advance(parser_ref)
+    var right = parse_comparison(parser_ref)
+    var op = if op_token.kind == "EQ" { "==" } else { "!=" }
+    left = Expr { kind: "binary", val_left: left, val_op: op, val_right: right }
+  }
+
+  return left
+}
+
+fn parse_comparison(parser: Parser) -> Expr {
+  var parser_ref = parser
+  var left = parse_additive(parser_ref)
+
+  while parser_match(parser_ref, ["LT", "LE", "GT", "GE"]) {
+    var op_token = parser_current(parser_ref)
+    parser_ref = parser_advance(parser_ref)
+    var right = parse_additive(parser_ref)
+    var op = op_token.value
+    left = Expr { kind: "binary", val_left: left, val_op: op, val_right: right }
+  }
+
+  return left
+}
+
+fn parse_additive(parser: Parser) -> Expr {
+  var parser_ref = parser
+  var left = parse_multiplicative(parser_ref)
+
+  while parser_match(parser_ref, ["PLUS", "MINUS"]) {
+    var op_token = parser_current(parser_ref)
+    parser_ref = parser_advance(parser_ref)
+    var right = parse_multiplicative(parser_ref)
+    var op = op_token.value
+    left = Expr { kind: "binary", val_left: left, val_op: op, val_right: right }
+  }
+
+  return left
+}
+
+fn parse_multiplicative(parser: Parser) -> Expr {
+  var parser_ref = parser
+  var left = parse_unary(parser_ref)
+
+  while parser_match(parser_ref, ["STAR", "SLASH", "MOD"]) {
+    var op_token = parser_current(parser_ref)
+    parser_ref = parser_advance(parser_ref)
+    var right = parse_unary(parser_ref)
+    var op = op_token.value
+    left = Expr { kind: "binary", val_left: left, val_op: op, val_right: right }
+  }
+
+  return left
+}
+
+fn parse_unary(parser: Parser) -> Expr {
+  if parser_match(parser, ["MINUS", "BANG", "AMPERSAND"]) {
+    var op_token = parser_current(parser)
+    var parser_ref = parser_advance(parser)
+    var expr = parse_unary(parser_ref)
+    var op = op_token.value
+    return Expr { kind: "unary", val_op: op, val_expr: expr }
+  }
+
+  return parse_postfix(parser)
+}
+
+fn parse_postfix(parser: Parser) -> Expr {
+  var parser_ref = parser
+  var expr = parse_primary(parser_ref)
+
+  while true {
+    if parser_check(parser_ref, "LPAREN") {
+      // Function call
+      parser_ref = parser_advance(parser_ref)
+      var args: [Expr] = []
+
+      if !parser_check(parser_ref, "RPAREN") {
+        args = push(args, parse_expr(parser_ref))
+        while parser_check(parser_ref, "COMMA") {
+          parser_ref = parser_advance(parser_ref)
+          args = push(args, parse_expr(parser_ref))
+        }
+      }
+
+      parser_ref = parser_expect(parser_ref, "RPAREN")
+      var name = expr.val_name
+      expr = Expr { kind: "call", val_name: name, val_args: args }
+    } else if parser_check(parser_ref, "LBRACKET") {
+      // Index
+      parser_ref = parser_advance(parser_ref)
+      var index = parse_expr(parser_ref)
+      parser_ref = parser_expect(parser_ref, "RBRACKET")
+      expr = Expr { kind: "index", val_expr: expr, val_index: index }
+    } else if parser_check(parser_ref, "DOT") {
+      // Field access - TODO
+      parser_ref = parser_advance(parser_ref)
+      parser_ref = parser_expect(parser_ref, "IDENT")
+      break
+    } else {
+      break
+    }
+  }
+
+  return expr
+}
+
+fn parse_primary(parser: Parser) -> Expr {
+  var token = parser_current(parser)
+  var parser_ref = parser
+
+  if token.kind == "INT" {
+    parser_ref = parser_advance(parser_ref)
+    return Expr { kind: "int", val_int: 0 }  // TODO: parse int value
+  } else if token.kind == "FLOAT" {
+    parser_ref = parser_advance(parser_ref)
+    return Expr { kind: "float", val_float: 0.0 }  // TODO: parse float value
+  } else if token.kind == "STRING" {
+    parser_ref = parser_advance(parser_ref)
+    return Expr { kind: "string", val_string: token.value }
+  } else if token.kind == "IDENT" {
+    parser_ref = parser_advance(parser_ref)
+    return Expr { kind: "ident", val_name: token.value }
+  } else if token.kind == "KEYWORD" && token.value == "true" {
+    parser_ref = parser_advance(parser_ref)
+    return Expr { kind: "bool", val_bool: true }
+  } else if token.kind == "KEYWORD" && token.value == "false" {
+    parser_ref = parser_advance(parser_ref)
+    return Expr { kind: "bool", val_bool: false }
+  } else if token.kind == "LPAREN" {
+    parser_ref = parser_advance(parser_ref)
+    var expr = parse_expr(parser_ref)
+    parser_ref = parser_expect(parser_ref, "RPAREN")
+    return expr
+  } else if token.kind == "LBRACKET" {
+    // Array literal
+    parser_ref = parser_advance(parser_ref)
+    var elements: [Expr] = []
+
+    if !parser_check(parser_ref, "RBRACKET") {
+      elements = push(elements, parse_expr(parser_ref))
+      while parser_check(parser_ref, "COMMA") {
+        parser_ref = parser_advance(parser_ref)
+        if parser_check(parser_ref, "RBRACKET") { break }
+        elements = push(elements, parse_expr(parser_ref))
+      }
+    }
+
+    parser_ref = parser_expect(parser_ref, "RBRACKET")
+    return Expr { kind: "array", val_elements: elements }
+  } else if token.kind == "KEYWORD" && token.value == "if" {
+    parser_ref = parser_advance(parser_ref)
+    var cond = parse_expr(parser_ref)
+    parser_ref = parser_expect(parser_ref, "LBRACE")
+    var then_expr = Expr { kind: "int", val_int: 0 }  // TODO
+    parser_ref = parser_expect(parser_ref, "RBRACE")
+    return then_expr
+  } else {
+    panic("Unexpected token: " + token.kind)
+  }
+}
+
+// ============================================================
+// Statement Parsing
+// ============================================================
+
+fn parse_stmt(parser: Parser) -> Stmt {
+  var token = parser_current(parser)
+
+  if token.kind == "KEYWORD" {
+    if token.value == "var" {
+      return parse_var_stmt(parser)
+    } else if token.value == "let" {
+      return parse_let_stmt(parser)
+    } else if token.value == "return" {
+      return parse_return_stmt(parser)
+    } else if token.value == "if" {
+      return parse_if_stmt(parser)
+    } else if token.value == "while" {
+      return parse_while_stmt(parser)
+    } else if token.value == "for" {
+      return parse_for_stmt(parser)
+    } else {
+      return parse_expr_stmt(parser)
+    }
+  } else {
+    return parse_expr_stmt(parser)
+  }
+}
+
+fn parse_var_stmt(parser: Parser) -> Stmt {
+  var parser_ref = parser_expect(parser, "var")
+  var name_token = parser_current(parser_ref)
+  parser_ref = parser_expect(parser_ref, "IDENT")
+  var name = name_token.value
+
+  var ty = "auto"
+  if parser_check(parser_ref, "COLON") {
+    parser_ref = parser_advance(parser_ref)
+    var ty_token = parser_current(parser_ref)
+    parser_ref = parser_advance(parser_ref)
+    ty = ty_token.value
+  }
+
+  var value = Expr { kind: "int", val_int: 0 }
+  if parser_check(parser_ref, "ASSIGN") {
+    parser_ref = parser_advance(parser_ref)
+    value = parse_expr(parser_ref)
+  }
+
+  parser_ref = parser_expect(parser_ref, "SEMICOLON")
+
+  return Stmt { kind: "var", val_name: name, val_value: value, val_type: ty }
+}
+
+fn parse_let_stmt(parser: Parser) -> Stmt {
+  var parser_ref = parser_expect(parser, "let")
+  var name_token = parser_current(parser_ref)
+  parser_ref = parser_expect(parser_ref, "IDENT")
+  var name = name_token.value
+
+  parser_ref = parser_expect(parser_ref, "ASSIGN")
+  var value = parse_expr(parser_ref)
+  parser_ref = parser_expect(parser_ref, "SEMICOLON")
+
+  return Stmt { kind: "let", val_name: name, val_value: value }
+}
+
+fn parse_return_stmt(parser: Parser) -> Stmt {
+  var parser_ref = parser_expect(parser, "return")
+  var value = parse_expr(parser_ref)
+  parser_ref = parser_expect(parser_ref, "SEMICOLON")
+
+  return Stmt { kind: "return", val_value: value }
+}
+
+fn parse_if_stmt(parser: Parser) -> Stmt {
+  var parser_ref = parser_expect(parser, "if")
+  var cond = parse_expr(parser_ref)
+
+  parser_ref = parser_expect(parser_ref, "LBRACE")
+  var then_block: [Stmt] = []
+  while !parser_check(parser_ref, "RBRACE") && !parser_check(parser_ref, "EOF") {
+    then_block = push(then_block, parse_stmt(parser_ref))
+  }
+  parser_ref = parser_expect(parser_ref, "RBRACE")
+
+  var else_block: [Stmt] = []
+  if parser_check(parser_ref, "KEYWORD") && parser_current(parser_ref).value == "else" {
+    parser_ref = parser_advance(parser_ref)
+    parser_ref = parser_expect(parser_ref, "LBRACE")
+    while !parser_check(parser_ref, "RBRACE") && !parser_check(parser_ref, "EOF") {
+      else_block = push(else_block, parse_stmt(parser_ref))
+    }
+    parser_ref = parser_expect(parser_ref, "RBRACE")
+  }
+
+  return Stmt { kind: "if", val_cond: cond, val_then_block: then_block, val_else_block: else_block }
+}
+
+fn parse_while_stmt(parser: Parser) -> Stmt {
+  var parser_ref = parser_expect(parser, "while")
+  var cond = parse_expr(parser_ref)
+
+  parser_ref = parser_expect(parser_ref, "LBRACE")
+  var body: [Stmt] = []
+  while !parser_check(parser_ref, "RBRACE") && !parser_check(parser_ref, "EOF") {
+    body = push(body, parse_stmt(parser_ref))
+  }
+  parser_ref = parser_expect(parser_ref, "RBRACE")
+
+  return Stmt { kind: "while", val_cond: cond, val_body: body }
+}
+
+fn parse_for_stmt(parser: Parser) -> Stmt {
+  var parser_ref = parser_expect(parser, "for")
+  var var_token = parser_current(parser_ref)
+  parser_ref = parser_expect(parser_ref, "IDENT")
+  var var_name = var_token.value
+
+  parser_ref = parser_expect(parser_ref, "IN")
+  var start = parse_expr(parser_ref)
+  parser_ref = parser_expect(parser_ref, "DOTDOT")
+  var end = parse_expr(parser_ref)
+
+  parser_ref = parser_expect(parser_ref, "LBRACE")
+  var body: [Stmt] = []
+  while !parser_check(parser_ref, "RBRACE") && !parser_check(parser_ref, "EOF") {
+    body = push(body, parse_stmt(parser_ref))
+  }
+  parser_ref = parser_expect(parser_ref, "RBRACE")
+
+  return Stmt { kind: "for", val_var: var_name, val_start: start, val_end: end, val_body: body }
+}
+
+fn parse_expr_stmt(parser: Parser) -> Stmt {
+  var expr = parse_expr(parser)
+  if parser_check(parser, "SEMICOLON") {
+    parser = parser_advance(parser)
+  }
+  return Stmt { kind: "expr", val_expr: expr }
+}
+
+// ============================================================
+// Declaration Parsing
+// ============================================================
+
+fn parse_decl(parser: Parser) -> Decl {
+  var token = parser_current(parser)
+
+  if token.kind == "KEYWORD" && token.value == "fn" {
+    return parse_fn_decl(parser)
+  } else if token.kind == "KEYWORD" && token.value == "struct" {
+    return parse_struct_decl(parser)
+  } else {
+    panic("Expected fn or struct")
+  }
+}
+
+fn parse_fn_decl(parser: Parser) -> Decl {
+  var parser_ref = parser_expect(parser, "fn")
+  var name_token = parser_current(parser_ref)
+  parser_ref = parser_expect(parser_ref, "IDENT")
+  var name = name_token.value
+
+  parser_ref = parser_expect(parser_ref, "LPAREN")
+  var params: [Param] = []
+  while !parser_check(parser_ref, "RPAREN") {
+    var param_name = parser_current(parser_ref).value
+    parser_ref = parser_expect(parser_ref, "IDENT")
+    parser_ref = parser_expect(parser_ref, "COLON")
+    var param_type = parser_current(parser_ref).value
+    parser_ref = parser_advance(parser_ref)
+
+    params = push(params, Param { name: param_name, ty: param_type })
+
+    if parser_check(parser_ref, "COMMA") {
+      parser_ref = parser_advance(parser_ref)
+    }
+  }
+  parser_ref = parser_expect(parser_ref, "RPAREN")
+
+  var return_type = "void"
+  if parser_check(parser_ref, "ARROW") {
+    parser_ref = parser_advance(parser_ref)
+    return_type = parser_current(parser_ref).value
+    parser_ref = parser_advance(parser_ref)
+  }
+
+  parser_ref = parser_expect(parser_ref, "LBRACE")
+  var body: [Stmt] = []
+  while !parser_check(parser_ref, "RBRACE") && !parser_check(parser_ref, "EOF") {
+    body = push(body, parse_stmt(parser_ref))
+  }
+  parser_ref = parser_expect(parser_ref, "RBRACE")
+
+  return Decl { kind: "fn", val_name: name, val_params: params, val_body: body, val_return_type: return_type }
+}
+
+fn parse_struct_decl(parser: Parser) -> Decl {
+  var parser_ref = parser_expect(parser, "struct")
+  var name_token = parser_current(parser_ref)
+  parser_ref = parser_expect(parser_ref, "IDENT")
+  var name = name_token.value
+
+  parser_ref = parser_expect(parser_ref, "LBRACE")
+  var fields: [StructField] = []
+  while !parser_check(parser_ref, "RBRACE") && !parser_check(parser_ref, "EOF") {
+    var field_name = parser_current(parser_ref).value
+    parser_ref = parser_expect(parser_ref, "IDENT")
+    parser_ref = parser_expect(parser_ref, "COLON")
+    var field_type = parser_current(parser_ref).value
+    parser_ref = parser_advance(parser_ref)
+
+    fields = push(fields, StructField { name: field_name, ty: field_type, value: Expr { kind: "int", val_int: 0 } })
+
+    if parser_check(parser_ref, "COMMA") {
+      parser_ref = parser_advance(parser_ref)
+    }
+  }
+  parser_ref = parser_expect(parser_ref, "RBRACE")
+
+  return Decl { kind: "struct", val_name: name, val_fields: fields }
+}
+
+// ============================================================
+// Main Parser
+// ============================================================
+
+fn parse(tokens: [Token]) -> [Decl] {
+  var parser = parser_new(tokens)
+  var decls: [Decl] = []
+
+  while !parser_check(parser, "EOF") {
+    decls = push(decls, parse_decl(parser))
+  }
+
+  return decls
+}
+
+// ============================================================
+// Test Entry Point
+// ============================================================
+
+fn test_parser() {
+  var source = "fn add(a: i32, b: i32) -> i32 { return a + b; }"
+  var tokens = lex(source)
+
+  println("Parsing...")
+  // var decls = parse(tokens)  // TODO: handle parser errors gracefully
+  println("Parse complete")
+}
+
+// test_parser()

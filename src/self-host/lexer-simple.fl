@@ -1,0 +1,22 @@
+// ============================================================
+// FreeLang v4 Self-Hosting Lexer (Simplified)
+// ============================================================
+
+fn lex(source: str) -> str {
+  var result = "Lexing: "
+  var i = 0
+  while i < length(source) {
+    var c = char_at(source, i)
+    result = result + c
+    i = i + 1
+  }
+  return result
+}
+
+fn test_simple_lex() -> void {
+  var code = "var x = 42"
+  var tokens = lex(code)
+  println(tokens)
+}
+
+test_simple_lex()

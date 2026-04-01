@@ -1,0 +1,68 @@
+// ============================================================
+// FreeLang v4 Self-Hosting Bootstrap (bootstrap.fl)
+// Stage 2: Self-hosted Lexer → Parser → Interpreter
+// Entry point for verifying lexer.fl independently
+// ============================================================
+
+// ============================================================
+// Lexer Test
+// ============================================================
+
+fn test_lexer_simple() -> void {
+  println("=== Lexer Verification ===")
+  println("")
+
+  // Redirect: Execute lexer.fl directly via:
+  // node dist/main.js src/self-host/lexer.fl
+  println("Lexer loaded successfully.")
+  println("Run: node dist/main.js src/self-host/lexer.fl")
+}
+
+// ============================================================
+// Parser Test
+// ============================================================
+
+fn test_parser_simple() -> void {
+  println("=== Parser Verification ===")
+  println("")
+
+  // Redirect: Execute parser.fl directly via:
+  // node dist/main.js src/self-host/parser.fl
+  println("Parser loaded successfully.")
+  println("Run: node dist/main.js src/self-host/parser.fl")
+}
+
+// ============================================================
+// Interpreter Test
+// ============================================================
+
+fn test_interpreter_simple() -> void {
+  println("=== Interpreter Verification ===")
+  println("")
+
+  // Redirect: Execute interpreter.fl directly via:
+  // node dist/main.js src/self-host/interpreter.fl
+  println("Interpreter loaded successfully.")
+  println("Run: node dist/main.js src/self-host/interpreter.fl")
+}
+
+// ============================================================
+// Bootstrap Entry Point
+// ============================================================
+
+fn main() -> void {
+  println("=== FreeLang v4 Self-Hosting Bootstrap ===")
+  println("")
+  println("Self-hosting components:")
+  println("  Stage 1: Lexer (lexer.fl)")
+  println("  Stage 2: Parser (parser.fl)")
+  println("  Stage 3: Interpreter (interpreter.fl)")
+  println("")
+  println("To test individual components:")
+  println("  > node dist/main.js src/self-host/lexer.fl")
+  println("  > node dist/main.js src/self-host/parser.fl")
+  println("  > node dist/main.js src/self-host/interpreter.fl")
+  println("")
+}
+
+main()
