@@ -1,0 +1,10 @@
+// 테스트: Lexer
+var code = "var x: i32 = 42"
+var result = tokenize(code)
+var tokens_arr = result[0]
+var i: i32 = 0
+while i < length(tokens_arr) {
+  var tok = tokens_arr[i]
+  println(tok.lexeme)
+  i = i + 1
+}

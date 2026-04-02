@@ -1,0 +1,399 @@
+// Priority 3: AI Quote/Contract Assistant - Week 1
+// Quote Engine: 견적 생성 및 계산 엔진
+// 서비스별 가격 계산, 할인, 세금 처리
+
+println("=" + repeat("=", 59))
+println("Quote Engine - Price Calculation & Quote Generation")
+println("=" + repeat("=", 59))
+println("")
+
+// 서비스 가격 정의 (기본 가격)
+type ServicePrice = {
+  name: str,
+  base_price: num,
+  category: str,  // "wash", "interior", "protection"
+}
+
+type QuoteItem = {
+  service_name: str,
+  base_price: num,
+  category: str,
+  damage_multiplier: num,
+  additional_charges: num,
+  subtotal: num,
+}
+
+type Quote = {
+  quote_id: str,
+  customer_phone: str,
+  car_info_id: str,
+  car_info: Object,
+  service_items: [QuoteItem],
+  subtotal: num,
+  discount_amount: num,
+  discount_reason: str,
+  tax_rate: num,
+  tax_amount: num,
+  total_price: num,
+  expiry_timestamp: num,
+  created_timestamp: num,
+  status: str,  // "active", "expired", "accepted", "rejected"
+}
+
+// 기본 서비스 가격표
+fn get_service_prices() -> [ServicePrice] {
+  return [
+    {
+      name: "기본 세차",
+      base_price: 35000,
+      category: "wash",
+    },
+    {
+      name: "외부 상세 세차",
+      base_price: 55000,
+      category: "wash",
+    },
+    {
+      name: "내부 청소",
+      base_price: 40000,
+      category: "interior",
+    },
+    {
+      name: "내부 상세 청소",
+      base_price: 65000,
+      category: "interior",
+    },
+    {
+      name: "손상 부위 복원",
+      base_price: 100000,
+      category: "wash",
+    },
+    {
+      name: "도색 복원",
+      base_price: 150000,
+      category: "wash",
+    },
+    {
+      name: "실내 가죽 복원",
+      base_price: 80000,
+      category: "interior",
+    },
+    {
+      name: "코팅 보호",
+      base_price: 45000,
+      category: "protection",
+    },
+    {
+      name: "내구성 보호 팩",
+      base_price: 75000,
+      category: "protection",
+    },
+  ]
+}
+
+// 손상 정도에 따른 가중치 계산
+fn calculate_damage_multiplier(damage_severity: str) -> num {
+  match damage_severity {
+    "light" => 1.0,      // 가벼운 손상
+    "moderate" => 1.5,   // 중간 손상
+    "severe" => 2.2,     // 심각한 손상
+    _ => 1.0,            // 기본값
+  }
+}
+
+// 회원 할인율 계산
+fn calculate_member_discount(is_member: bool, discount_tier: str) -> num {
+  if !is_member {
+    return 0.0
+  }
+
+  match discount_tier {
+    "bronze" => 0.05,    // 5%
+    "silver" => 0.10,    // 10%
+    "gold" => 0.15,      // 15%
+    "platinum" => 0.20,  // 20%
+    _ => 0.0,
+  }
+}
+
+// 패키지 할인 계산
+fn calculate_package_discount(num_services: num) -> num {
+  if num_services >= 5 {
+    return 0.15  // 5개 이상: 15%
+  } else if num_services >= 3 {
+    return 0.10  // 3개 이상: 10%
+  } else if num_services >= 2 {
+    return 0.05  // 2개: 5%
+  }
+  return 0.0
+}
+
+// 세금 계산 (한국 부가세 10%)
+fn calculate_tax(subtotal: num, tax_rate: num) -> num {
+  return subtotal * tax_rate
+}
+
+// 서비스 항목에 대한 최종 가격 계산
+fn calculate_service_item(
+  service: ServicePrice,
+  damage_multiplier: num,
+  additional_charges: num
+) -> QuoteItem {
+  var adjusted_price = service["base_price"] * damage_multiplier
+  var subtotal = adjusted_price + additional_charges
+
+  return {
+    service_name: service["name"],
+    base_price: service["base_price"],
+    category: service["category"],
+    damage_multiplier: damage_multiplier,
+    additional_charges: additional_charges,
+    subtotal: subtotal,
+  }
+}
+
+// 고객 정보 기반 견적 생성
+fn calculate_quote(
+  customer_phone: str,
+  car_info: Object,
+  selected_service_names: [str],
+  is_member: bool,
+  discount_tier: str
+) -> Quote {
+  var created_time = time_millis()
+  var expiry_time = created_time + (24 * 60 * 60 * 1000)  // 24시간 유효
+  var quote_id = generate_quote_id()
+  var car_info_id = car_info["id"] || "unknown"
+
+  // 손상 정도 조회
+  var damage_severity = car_info["damage_severity"] || "light"
+  var damage_multiplier = calculate_damage_multiplier(damage_severity)
+
+  // 선택된 서비스 조회
+  var all_services = get_service_prices()
+  var selected_services = []
+  var i = 0
+  while i < len(selected_service_names) {
+    var service_name = selected_service_names[i]
+    var j = 0
+    while j < len(all_services) {
+      var service = all_services[j]
+      if service["name"] == service_name {
+        var_push(selected_services, service)
+      }
+      j = j + 1
+    }
+    i = i + 1
+  }
+
+  // 각 서비스 항목 계산
+  var service_items = []
+  var service_subtotal = 0
+  var k = 0
+  while k < len(selected_services) {
+    var service = selected_services[k]
+    var item = calculate_service_item(service, damage_multiplier, 0)
+    var_push(service_items, item)
+    service_subtotal = service_subtotal + item["subtotal"]
+    k = k + 1
+  }
+
+  // 할인 계산 (더 큰 할인 선택)
+  var member_discount_rate = calculate_member_discount(is_member, discount_tier)
+  var package_discount_rate = calculate_package_discount(len(selected_services))
+  var discount_rate = max(member_discount_rate, package_discount_rate)
+
+  var discount_reason = ""
+  if discount_rate == member_discount_rate {
+    discount_reason = discount_tier + " member discount"
+  } else if discount_rate > 0 {
+    discount_reason = "package discount for " + num_to_str(len(selected_services)) + " services"
+  }
+
+  var discount_amount = service_subtotal * discount_rate
+  var subtotal_after_discount = service_subtotal - discount_amount
+
+  // 세금 계산 (10%)
+  var tax_rate = 0.1
+  var tax_amount = calculate_tax(subtotal_after_discount, tax_rate)
+  var total = subtotal_after_discount + tax_amount
+
+  return {
+    quote_id: quote_id,
+    customer_phone: customer_phone,
+    car_info_id: car_info_id,
+    car_info: car_info,
+    service_items: service_items,
+    subtotal: service_subtotal,
+    discount_amount: discount_amount,
+    discount_reason: discount_reason,
+    tax_rate: tax_rate,
+    tax_amount: tax_amount,
+    total_price: total,
+    expiry_timestamp: expiry_time,
+    created_timestamp: created_time,
+    status: "active",
+  }
+}
+
+// 고유 견적 ID 생성 (QT + 타임스탬프)
+fn generate_quote_id() -> str {
+  var timestamp = time_millis()
+  return "QT" + num_to_str(timestamp)
+}
+
+// 숫자를 문자열로 변환
+fn num_to_str(n: num) -> str {
+  var result = ""
+  if n == 0 {
+    return "0"
+  }
+
+  var num = n
+  var digits = []
+  while num > 0 {
+    var digit = num % 10
+    var_push(digits, digit)
+    num = num / 10
+  }
+
+  var i = len(digits) - 1
+  while i >= 0 {
+    result = result + digit_to_char(digits[i])
+    i = i - 1
+  }
+
+  return result
+}
+
+// 숫자를 문자로 변환
+fn digit_to_char(digit: num) -> str {
+  match digit {
+    0 => "0",
+    1 => "1",
+    2 => "2",
+    3 => "3",
+    4 => "4",
+    5 => "5",
+    6 => "6",
+    7 => "7",
+    8 => "8",
+    9 => "9",
+    _ => "?",
+  }
+}
+
+// 두 숫자 중 큰 값 반환
+fn max(a: num, b: num) -> num {
+  if a >= b {
+    return a
+  }
+  return b
+}
+
+// 배열에 요소 추가
+fn var_push(arr: [any], item: any) -> void {
+  // 이 함수는 배열 변경 내장 함수
+}
+
+// 견적 서식화 출력
+fn format_quote_for_display(quote: Quote) -> str {
+  var result = ""
+  result = result + "见積ID: " + quote["quote_id"] + "\n"
+  result = result + "고객 연락처: " + quote["customer_phone"] + "\n"
+  result = result + "차량 정보: " + quote["car_info"]["car_model"] + " (" + quote["car_info"]["year"] + ")\n"
+  result = result + "\n서비스 항목:\n"
+
+  var i = 0
+  while i < len(quote["service_items"]) {
+    var item = quote["service_items"][i]
+    result = result + "  - " + item["service_name"] + ": " + format_currency(item["subtotal"]) + "\n"
+    i = i + 1
+  }
+
+  result = result + "\n합계:\n"
+  result = result + "소계: " + format_currency(quote["subtotal"]) + "\n"
+
+  if quote["discount_amount"] > 0 {
+    result = result + "할인 (" + quote["discount_reason"] + "): -" + format_currency(quote["discount_amount"]) + "\n"
+  }
+
+  result = result + "세금 (10%): " + format_currency(quote["tax_amount"]) + "\n"
+  result = result + "최종 금액: " + format_currency(quote["total_price"]) + "\n"
+  result = result + "유효 기간: 24시간\n"
+
+  return result
+}
+
+// 통화 서식화 (KRW)
+fn format_currency(amount: num) -> str {
+  // 간단한 구현: 숫자를 문자열로 변환
+  return "₩" + num_to_str(amount as num)
+}
+
+// 테스트 함수
+fn test_quote_engine() {
+  println("")
+  println("Quote Engine Tests")
+  println("-" + repeat("-", 40))
+
+  // Test 1: 서비스 가격 로드
+  println("Test 1: Loading service prices...")
+  var prices = get_service_prices()
+  if len(prices) == 9 {
+    println("✓ Loaded 9 services")
+  } else {
+    println("✗ Service count mismatch: " + num_to_str(len(prices)))
+  }
+
+  // Test 2: 손상 정도 가중치
+  println("Test 2: Damage multiplier calculation...")
+  var light = calculate_damage_multiplier("light")
+  var moderate = calculate_damage_multiplier("moderate")
+  var severe = calculate_damage_multiplier("severe")
+  if light == 1.0 && moderate == 1.5 && severe == 2.2 {
+    println("✓ Damage multipliers correct")
+  } else {
+    println("✗ Damage multiplier values incorrect")
+  }
+
+  // Test 3: 할인 계산
+  println("Test 3: Discount calculation...")
+  var member_discount = calculate_member_discount(true, "gold")
+  var package_discount = calculate_package_discount(4)
+  if member_discount == 0.15 && package_discount == 0.10 {
+    println("✓ Discount calculations correct")
+  } else {
+    println("✗ Discount calculation failed")
+  }
+
+  // Test 4: 견적 생성 (모의 데이터)
+  println("Test 4: Quote generation...")
+  var car_info = {
+    id: "car_001",
+    car_model: "Hyundai Elantra",
+    year: "2021",
+    color: "Silver",
+    damage_severity: "moderate",
+  }
+  var services = ["기본 세차", "내부 청소"]
+  var quote = calculate_quote("010-1234-5678", car_info, services, true, "silver")
+
+  if quote["quote_id"] && len(quote["service_items"]) == 2 {
+    println("✓ Quote generated successfully")
+    println("  Quote ID: " + quote["quote_id"])
+    println("  Total: " + format_currency(quote["total_price"]))
+  } else {
+    println("✗ Quote generation failed")
+  }
+
+  println("")
+  println("Quote Engine Tests Complete")
+}
+
+// 메인 실행
+test_quote_engine()
+
+println("")
+println("Quote Engine initialization complete.")
+println("Export: calculate_quote/5, format_quote_for_display/1")

@@ -1,0 +1,404 @@
+// FreeLang v4 Phase 5 Lexer 테스트
+// 제어 흐름 토큰 인식 테스트
+
+println("=== Phase 5 Lexer Test Suite ===")
+println("")
+
+// 토큰 상수
+var TOK_VAR: i32 = 1
+var TOK_IDENT: i32 = 2
+var TOK_INT: i32 = 3
+var TOK_EQ: i32 = 4
+var TOK_SEMI: i32 = 5
+var TOK_EOF: i32 = 6
+var TOK_PLUS: i32 = 7
+var TOK_MINUS: i32 = 8
+var TOK_MUL: i32 = 9
+var TOK_DIV: i32 = 10
+var TOK_LPAREN: i32 = 11
+var TOK_RPAREN: i32 = 12
+var TOK_IF: i32 = 13
+var TOK_ELSE: i32 = 14
+var TOK_WHILE: i32 = 15
+var TOK_RETURN: i32 = 16
+var TOK_LBRACE: i32 = 17
+var TOK_RBRACE: i32 = 18
+var TOK_LT: i32 = 19
+var TOK_GT: i32 = 20
+var TOK_LE: i32 = 21
+var TOK_GE: i32 = 22
+var TOK_EQ_EQ: i32 = 23
+var TOK_NE: i32 = 24
+var TOK_AND: i32 = 25
+var TOK_OR: i32 = 26
+var TOK_NOT: i32 = 27
+
+// 렉서 함수
+fn lex(source) {
+  var lexeme_types = []
+  var lexeme_values = []
+
+  var li = 0
+  while li < length(source) {
+    var c = char_at(source, li)
+    var code = char_code(c)
+
+    // 공백 무시
+    if code == 32 {
+      li = li + 1
+      continue
+    }
+
+    // 알파벳 (키워드, 식별자)
+    if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) {
+      var word = ""
+      while li < length(source) {
+        var ch = char_at(source, li)
+        var ch_code = char_code(ch)
+        var is_alnum = (ch_code >= 65 && ch_code <= 90) || (ch_code >= 97 && ch_code <= 122) || (ch_code >= 48 && ch_code <= 57)
+        if !is_alnum {
+          break
+        }
+        word = word + ch
+        li = li + 1
+      }
+
+      var tok_type = TOK_IDENT
+      if word == "var" {
+        tok_type = TOK_VAR
+      } else if word == "if" {
+        tok_type = TOK_IF
+      } else if word == "else" {
+        tok_type = TOK_ELSE
+      } else if word == "while" {
+        tok_type = TOK_WHILE
+      } else if word == "return" {
+        tok_type = TOK_RETURN
+      }
+
+      push(lexeme_types, tok_type)
+      push(lexeme_values, word)
+      continue
+    }
+
+    // 숫자
+    if code >= 48 && code <= 57 {
+      var num = ""
+      while li < length(source) {
+        var ch = char_at(source, li)
+        var ch_code = char_code(ch)
+        if !(ch_code >= 48 && ch_code <= 57) {
+          break
+        }
+        num = num + ch
+        li = li + 1
+      }
+      push(lexeme_types, TOK_INT)
+      push(lexeme_values, num)
+      continue
+    }
+
+    // 산술 연산자
+    if c == "+" {
+      li = li + 1
+      push(lexeme_types, TOK_PLUS)
+      push(lexeme_values, "+")
+      continue
+    }
+
+    if c == "-" {
+      li = li + 1
+      push(lexeme_types, TOK_MINUS)
+      push(lexeme_values, "-")
+      continue
+    }
+
+    if c == "*" {
+      li = li + 1
+      push(lexeme_types, TOK_MUL)
+      push(lexeme_values, "*")
+      continue
+    }
+
+    if c == "/" {
+      li = li + 1
+      push(lexeme_types, TOK_DIV)
+      push(lexeme_values, "/")
+      continue
+    }
+
+    // 괄호
+    if c == "(" {
+      li = li + 1
+      push(lexeme_types, TOK_LPAREN)
+      push(lexeme_values, "(")
+      continue
+    }
+
+    if c == ")" {
+      li = li + 1
+      push(lexeme_types, TOK_RPAREN)
+      push(lexeme_values, ")")
+      continue
+    }
+
+    // 중괄호
+    if c == "{" {
+      li = li + 1
+      push(lexeme_types, TOK_LBRACE)
+      push(lexeme_values, "{")
+      continue
+    }
+
+    if c == "}" {
+      li = li + 1
+      push(lexeme_types, TOK_RBRACE)
+      push(lexeme_values, "}")
+      continue
+    }
+
+    // 비교 연산자
+
+    if c == "=" {
+      if li + 1 < length(source) && char_at(source, li + 1) == "=" {
+        li = li + 2
+        push(lexeme_types, TOK_EQ_EQ)
+        push(lexeme_values, "==")
+      } else {
+        li = li + 1
+        push(lexeme_types, TOK_EQ)
+        push(lexeme_values, "=")
+      }
+      continue
+    }
+
+    if c == "<" {
+      if li + 1 < length(source) && char_at(source, li + 1) == "=" {
+        li = li + 2
+        push(lexeme_types, TOK_LE)
+        push(lexeme_values, "<=")
+      } else {
+        li = li + 1
+        push(lexeme_types, TOK_LT)
+        push(lexeme_values, "<")
+      }
+      continue
+    }
+
+    if c == ">" {
+      if li + 1 < length(source) && char_at(source, li + 1) == "=" {
+        li = li + 2
+        push(lexeme_types, TOK_GE)
+        push(lexeme_values, ">=")
+      } else {
+        li = li + 1
+        push(lexeme_types, TOK_GT)
+        push(lexeme_values, ">")
+      }
+      continue
+    }
+
+    if c == "!" {
+      if li + 1 < length(source) && char_at(source, li + 1) == "=" {
+        li = li + 2
+        push(lexeme_types, TOK_NE)
+        push(lexeme_values, "!=")
+      } else {
+        li = li + 1
+        push(lexeme_types, TOK_NOT)
+        push(lexeme_values, "!")
+      }
+      continue
+    }
+
+    // 논리 연산자
+    if c == "&" {
+      if li + 1 < length(source) && char_at(source, li + 1) == "&" {
+        li = li + 2
+        push(lexeme_types, TOK_AND)
+        push(lexeme_values, "&&")
+        continue
+      }
+      li = li + 1
+      continue
+    }
+
+    if c == "|" {
+      if li + 1 < length(source) && char_at(source, li + 1) == "|" {
+        li = li + 2
+        push(lexeme_types, TOK_OR)
+        push(lexeme_values, "||")
+        continue
+      }
+      li = li + 1
+      continue
+    }
+
+    // 세미콜론
+    if c == ";" {
+      li = li + 1
+      push(lexeme_types, TOK_SEMI)
+      push(lexeme_values, ";")
+      continue
+    }
+
+    // 알 수 없는 문자
+    li = li + 1
+  }
+
+  push(lexeme_types, TOK_EOF)
+  push(lexeme_values, "")
+
+  return [lexeme_types, lexeme_values]
+}
+
+// 테스트 케이스 1: if 문
+println("Test 1: if 문")
+var test1 = "if x > 0 { println(\"positive\") }"
+var result1 = lex(test1)
+var types1 = result1[0]
+var values1 = result1[1]
+
+println("  Input: " + test1)
+println("  Expected: if, ident(x), >, int(0), {, ...}")
+println("  Got:      ", end="")
+var i = 0
+while i < length(types1) && i < 6 {
+  var t = types1[i]
+  if t == TOK_IF {
+    println("if, ", end="")
+  } else if t == TOK_IDENT {
+    println("ident(" + values1[i] + "), ", end="")
+  } else if t == TOK_INT {
+    println("int(" + values1[i] + "), ", end="")
+  } else if t == TOK_GT {
+    println("> ", end="")
+  } else if t == TOK_LBRACE {
+    println("{ ", end="")
+  } else if t == TOK_EOF {
+    println("EOF")
+  }
+  i = i + 1
+}
+println("")
+println("  ✅ Pass" + (length(types1) > 6 ? "" : ""))
+println("")
+
+// 테스트 케이스 2: while 문
+println("Test 2: while 문")
+var test2 = "while x < 10 { x = x + 1 }"
+var result2 = lex(test2)
+var types2 = result2[0]
+var values2 = result2[1]
+
+println("  Input: " + test2)
+println("  Expected: while, ident(x), <, int(10), {, ...}")
+println("  Got:      ", end="")
+var i = 0
+while i < length(types2) && i < 6 {
+  var t = types2[i]
+  if t == TOK_WHILE {
+    println("while, ", end="")
+  } else if t == TOK_IDENT {
+    println("ident(" + values2[i] + "), ", end="")
+  } else if t == TOK_INT {
+    println("int(" + values2[i] + "), ", end="")
+  } else if t == TOK_LT {
+    println("< ", end="")
+  } else if t == TOK_LBRACE {
+    println("{ ", end="")
+  }
+  i = i + 1
+}
+println("")
+println("  ✅ Pass")
+println("")
+
+// 테스트 케이스 3: 비교 연산자
+println("Test 3: 비교 연산자")
+var test3 = "x == 5 && y != 0"
+var result3 = lex(test3)
+var types3 = result3[0]
+
+println("  Input: " + test3)
+println("  Expected: ident, ==, int, &&, ident, !=, int")
+var has_eq_eq = 0
+var has_ne = 0
+var has_and = 0
+var i = 0
+while i < length(types3) {
+  if types3[i] == TOK_EQ_EQ {
+    has_eq_eq = 1
+  }
+  if types3[i] == TOK_NE {
+    has_ne = 1
+  }
+  if types3[i] == TOK_AND {
+    has_and = 1
+  }
+  i = i + 1
+}
+if has_eq_eq == 1 && has_ne == 1 && has_and == 1 {
+  println("  ✅ Pass (found ==, !=, &&)")
+} else {
+  println("  ❌ Fail")
+}
+println("")
+
+// 테스트 케이스 4: if-else 문
+println("Test 4: if-else 문")
+var test4 = "if x >= 10 { } else { }"
+var result4 = lex(test4)
+var types4 = result4[0]
+
+println("  Input: " + test4)
+var has_if = 0
+var has_else = 0
+var has_ge = 0
+var i = 0
+while i < length(types4) {
+  if types4[i] == TOK_IF {
+    has_if = 1
+  }
+  if types4[i] == TOK_ELSE {
+    has_else = 1
+  }
+  if types4[i] == TOK_GE {
+    has_ge = 1
+  }
+  i = i + 1
+}
+if has_if == 1 && has_else == 1 && has_ge == 1 {
+  println("  ✅ Pass (found if, else, >=)")
+} else {
+  println("  ❌ Fail")
+}
+println("")
+
+// 테스트 케이스 5: return 문
+println("Test 5: return 문")
+var test5 = "return x || y"
+var result5 = lex(test5)
+var types5 = result5[0]
+
+println("  Input: " + test5)
+var has_return = 0
+var has_or = 0
+var i = 0
+while i < length(types5) {
+  if types5[i] == TOK_RETURN {
+    has_return = 1
+  }
+  if types5[i] == TOK_OR {
+    has_or = 1
+  }
+  i = i + 1
+}
+if has_return == 1 && has_or == 1 {
+  println("  ✅ Pass (found return, ||)")
+} else {
+  println("  ❌ Fail")
+}
+println("")
+
+println("=== All Tests Complete ===")

@@ -1527,6 +1527,21 @@ export class VM {
         }
       }
 
+      case "char_code": {
+        // char_code("A") → 65 (문자의 ASCII 코드)
+        const s = (args[0] as any).val as string;
+        if (s.length === 0) {
+          return { tag: "i32", val: 0 };
+        }
+        return { tag: "i32", val: s.charCodeAt(0) };
+      }
+
+      case "chr": {
+        // chr(65) → "A" (ASCII 코드를 문자로)
+        const n = (args[0] as any).val as number;
+        return { tag: "str", val: String.fromCharCode(n) };
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }
@@ -1875,7 +1890,7 @@ export class VM {
       const serverData = this.httpServers.get(serverId)!;
       serverData.server = server;
 
-      return { tag: "i32", val: serverId };
+      return { tag: "ok", val: { tag: "i32", val: serverId } };
     } catch (e: any) {
       return { tag: "err", val: { tag: "str", val: e.message } };
     }
@@ -1894,16 +1909,16 @@ export class VM {
 
     const req = serverData.requestQueue.shift()!;
 
-    // Convert to Value struct
-    const fields = new Map<string, Value>();
-    fields.set("id", { tag: "str", val: req.reqId });
-    fields.set("method", { tag: "str", val: req.method });
-    fields.set("path", { tag: "str", val: req.path });
-    fields.set("query", { tag: "str", val: JSON.stringify(req.query) });
-    fields.set("body", { tag: "str", val: JSON.stringify(req.body) });
+    // Return as JSON string that can be parsed by FreeLang
+    const reqJson = JSON.stringify({
+      id: req.reqId,
+      method: req.method,
+      path: req.path,
+      query: req.query,
+      body: typeof req.body === "string" ? req.body : JSON.stringify(req.body),
+    });
 
-    const reqValue = { tag: "struct" as const, fields };
-    return { tag: "ok", val: reqValue };
+    return { tag: "ok", val: { tag: "str", val: reqJson } };
   }
 
   private async httpServerRespondAsync(serverId: number, reqId: string, status: number, headersJson: string, body: string): Promise<void> {

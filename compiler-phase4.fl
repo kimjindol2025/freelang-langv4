@@ -1,0 +1,532 @@
+// FreeLang v4 자가 부트스트랩 Phase 4 — 이항 연산 지원
+// 렉서→파서→컴파일러 확장: 덧셈, 곱셈 표현식 파싱
+
+println("=== FreeLang v4 Phase 4: Binary Operations ===")
+println("")
+
+// ============================================================
+// PHASE 4 토큰 타입 확장
+// ============================================================
+
+// Phase 3 토큰 타입
+var TOK_VAR: i32 = 1
+var TOK_IDENT: i32 = 2
+var TOK_INT: i32 = 3
+var TOK_EQ: i32 = 4
+var TOK_SEMI: i32 = 5
+var TOK_EOF: i32 = 6
+
+// Phase 4 추가 토큰 타입
+var TOK_PLUS: i32 = 7
+var TOK_MINUS: i32 = 8
+var TOK_MUL: i32 = 9
+var TOK_DIV: i32 = 10
+var TOK_LPAREN: i32 = 11
+var TOK_RPAREN: i32 = 12
+
+// AST 노드 타입
+var NODE_VAR: i32 = 10
+var NODE_INT: i32 = 20
+var NODE_BINOP: i32 = 30
+var NODE_IDENT: i32 = 40
+
+// 바이너리 연산 타입
+var BINOP_ADD: i32 = 100
+var BINOP_SUB: i32 = 101
+var BINOP_MUL: i32 = 102
+var BINOP_DIV: i32 = 103
+
+// 바이트코드 오퍼레이션
+var OP_PUSH_I32: i32 = 1
+var OP_PUSH_VAR: i32 = 2
+var OP_ADD: i32 = 3
+var OP_SUB: i32 = 4
+var OP_MUL: i32 = 5
+var OP_DIV: i32 = 6
+var OP_STORE: i32 = 49
+var OP_HALT: i32 = 67
+
+// ============================================================
+// PHASE 1 EXTENDED: LEXER 확장
+// ============================================================
+
+println("--- PHASE 1: LEXER (Extended) ---")
+
+// 테스트 소스: 이항 연산 포함
+var source = "var x = 10; var y = x + 5; var z = y * 2"
+var lexeme_types = []
+var lexeme_values = []
+
+var li = 0
+while li < length(source) {
+  var c = char_at(source, li)
+  var code = char_code(c)
+
+  // 공백 무시
+  if code == 32 {
+    li = li + 1
+    continue
+  }
+
+  // 알파벳 (var, 변수명)
+  if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) {
+    var word = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      var is_alnum = (ch_code >= 65 && ch_code <= 90) || (ch_code >= 97 && ch_code <= 122) || (ch_code >= 48 && ch_code <= 57)
+      if !is_alnum {
+        break
+      }
+      word = word + ch
+      li = li + 1
+    }
+
+    var tok_type = TOK_IDENT
+    if word == "var" {
+      tok_type = TOK_VAR
+    }
+    push(lexeme_types, tok_type)
+    push(lexeme_values, word)
+    continue
+  }
+
+  // 숫자
+  if code >= 48 && code <= 57 {
+    var num = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      if !(ch_code >= 48 && ch_code <= 57) {
+        break
+      }
+      num = num + ch
+      li = li + 1
+    }
+    push(lexeme_types, TOK_INT)
+    push(lexeme_values, num)
+    continue
+  }
+
+  // Phase 4 연산자: +, -, *, /, (, )
+  if c == "+" {
+    li = li + 1
+    push(lexeme_types, TOK_PLUS)
+    push(lexeme_values, "+")
+    continue
+  }
+
+  if c == "-" {
+    li = li + 1
+    push(lexeme_types, TOK_MINUS)
+    push(lexeme_values, "-")
+    continue
+  }
+
+  if c == "*" {
+    li = li + 1
+    push(lexeme_types, TOK_MUL)
+    push(lexeme_values, "*")
+    continue
+  }
+
+  if c == "/" {
+    li = li + 1
+    push(lexeme_types, TOK_DIV)
+    push(lexeme_values, "/")
+    continue
+  }
+
+  if c == "(" {
+    li = li + 1
+    push(lexeme_types, TOK_LPAREN)
+    push(lexeme_values, "(")
+    continue
+  }
+
+  if c == ")" {
+    li = li + 1
+    push(lexeme_types, TOK_RPAREN)
+    push(lexeme_values, ")")
+    continue
+  }
+
+  // 기존 연산자
+  if c == "=" {
+    li = li + 1
+    push(lexeme_types, TOK_EQ)
+    push(lexeme_values, "=")
+    continue
+  }
+
+  if c == ";" {
+    li = li + 1
+    push(lexeme_types, TOK_SEMI)
+    push(lexeme_values, ";")
+    continue
+  }
+
+  li = li + 1
+}
+
+push(lexeme_types, TOK_EOF)
+push(lexeme_values, "")
+
+println("Lexer output: " + str(length(lexeme_types)) + " tokens")
+var li2 = 0
+while li2 < length(lexeme_types) {
+  println("  [" + str(li2) + "] type=" + str(lexeme_types[li2]) + " value=" + lexeme_values[li2])
+  li2 = li2 + 1
+}
+
+// ============================================================
+// PHASE 2 EXTENDED: PARSER 확장 (재귀 강하)
+// ============================================================
+
+println("")
+println("--- PHASE 2: PARSER (Extended) ---")
+
+var parser_pos = 0
+
+// AST 저장소 (다양한 노드 타입 지원)
+var ast_types = []       // 노드 타입
+var ast_names = []       // VAR 변수명, IDENT 변수명
+var ast_values = []      // INT 값
+var ast_op = []          // BINOP 연산 타입
+var ast_left = []        // BINOP 좌측 노드 인덱스
+var ast_right = []       // BINOP 우측 노드 인덱스
+
+// 편의 함수: 토큰 확인
+fn peek_token() {
+  if parser_pos < length(lexeme_types) {
+    return lexeme_types[parser_pos]
+  }
+  return TOK_EOF
+}
+
+// 편의 함수: 현재 토큰 값
+fn peek_value() {
+  if parser_pos < length(lexeme_values) {
+    return lexeme_values[parser_pos]
+  }
+  return ""
+}
+
+// 토큰 소비
+fn consume_token() {
+  parser_pos = parser_pos + 1
+}
+
+// 파서: 기본 표현식 (정수 또는 변수)
+fn parse_primary() {
+  var tok = peek_token()
+
+  if tok == TOK_INT {
+    var val = peek_value()
+    consume_token()
+
+    var node_idx = length(ast_types)
+    push(ast_types, NODE_INT)
+    push(ast_names, "")
+    push(ast_values, val)
+    push(ast_op, 0)
+    push(ast_left, -1)
+    push(ast_right, -1)
+
+    return node_idx
+  }
+
+  if tok == TOK_IDENT {
+    var name = peek_value()
+    consume_token()
+
+    var node_idx = length(ast_types)
+    push(ast_types, NODE_IDENT)
+    push(ast_names, name)
+    push(ast_values, "")
+    push(ast_op, 0)
+    push(ast_left, -1)
+    push(ast_right, -1)
+
+    return node_idx
+  }
+
+  if tok == TOK_LPAREN {
+    consume_token()
+    var expr = parse_additive()
+    if peek_token() == TOK_RPAREN {
+      consume_token()
+    }
+    return expr
+  }
+
+  return -1
+}
+
+// 파서: 곱셈/나눗셈 (우선순위 높음)
+fn parse_multiplicative() {
+  var left = parse_primary()
+
+  while peek_token() == TOK_MUL || peek_token() == TOK_DIV {
+    var tok = peek_token()
+    consume_token()
+
+    var right = parse_primary()
+
+    var op_type = BINOP_MUL
+    if tok == TOK_DIV {
+      op_type = BINOP_DIV
+    }
+
+    var node_idx = length(ast_types)
+    push(ast_types, NODE_BINOP)
+    push(ast_names, "")
+    push(ast_values, "")
+    push(ast_op, op_type)
+    push(ast_left, left)
+    push(ast_right, right)
+
+    left = node_idx
+  }
+
+  return left
+}
+
+// 파서: 덧셈/뺄셈 (우선순위 낮음)
+fn parse_additive() {
+  var left = parse_multiplicative()
+
+  while peek_token() == TOK_PLUS || peek_token() == TOK_MINUS {
+    var tok = peek_token()
+    consume_token()
+
+    var right = parse_multiplicative()
+
+    var op_type = BINOP_ADD
+    if tok == TOK_MINUS {
+      op_type = BINOP_SUB
+    }
+
+    var node_idx = length(ast_types)
+    push(ast_types, NODE_BINOP)
+    push(ast_names, "")
+    push(ast_values, "")
+    push(ast_op, op_type)
+    push(ast_left, left)
+    push(ast_right, right)
+
+    left = node_idx
+  }
+
+  return left
+}
+
+// 파서: 문장 파싱
+fn parse_statement() {
+  var tok = peek_token()
+
+  if tok == TOK_VAR {
+    consume_token()
+
+    // 변수명
+    var var_name = peek_value()
+    consume_token()
+
+    // = 스킵
+    if peek_token() == TOK_EQ {
+      consume_token()
+    }
+
+    // 표현식 파싱
+    var expr = parse_additive()
+
+    // ; 스킵
+    if peek_token() == TOK_SEMI {
+      consume_token()
+    }
+
+    // VAR 노드 생성
+    var node_idx = length(ast_types)
+    push(ast_types, NODE_VAR)
+    push(ast_names, var_name)
+    push(ast_values, str(expr))  // 표현식의 AST 인덱스 저장
+    push(ast_op, 0)
+    push(ast_left, expr)
+    push(ast_right, -1)
+
+    return
+  }
+
+  consume_token()
+}
+
+// 메인 파싱 루프
+while peek_token() != TOK_EOF {
+  parse_statement()
+}
+
+// 디버그: AST 출력
+println("Parser output: " + str(length(ast_types)) + " nodes")
+var pi = 0
+while pi < length(ast_types) {
+  var node_type = ast_types[pi]
+
+  if node_type == NODE_VAR {
+    println("  [" + str(pi) + "] VAR " + ast_names[pi] + " = expr#" + ast_values[pi])
+  }
+  else if node_type == NODE_INT {
+    println("  [" + str(pi) + "] INT " + ast_values[pi])
+  }
+  else if node_type == NODE_IDENT {
+    println("  [" + str(pi) + "] IDENT " + ast_names[pi])
+  }
+  else if node_type == NODE_BINOP {
+    var op_name = ""
+    if ast_op[pi] == BINOP_ADD {
+      op_name = "+"
+    }
+    else if ast_op[pi] == BINOP_SUB {
+      op_name = "-"
+    }
+    else if ast_op[pi] == BINOP_MUL {
+      op_name = "*"
+    }
+    else if ast_op[pi] == BINOP_DIV {
+      op_name = "/"
+    }
+    println("  [" + str(pi) + "] BINOP #" + str(ast_left[pi]) + " " + op_name + " #" + str(ast_right[pi]))
+  }
+
+  pi = pi + 1
+}
+
+// ============================================================
+// PHASE 3 EXTENDED: COMPILER 확장 (코드 생성)
+// ============================================================
+
+println("")
+println("--- PHASE 3: COMPILER (Extended) ---")
+
+var bytecode = []
+var constants = []
+var var_map = []   // 변수명 → 저장소 위치 매핑
+
+// 헬퍼: 문자열을 i32로 변환
+fn str_to_i32(val_str) {
+  var num = 0
+  var vi = 0
+  while vi < length(val_str) {
+    var digit_code = char_code(char_at(val_str, vi))
+    num = num * 10 + (digit_code - 48)
+    vi = vi + 1
+  }
+  return num
+}
+
+// 헬퍼: i32를 little-endian 4바이트로 변환
+fn emit_i32(value) {
+  push(bytecode, bitand(value, 255))
+  push(bytecode, bitand(shr(value, 8), 255))
+  push(bytecode, bitand(shr(value, 16), 255))
+  push(bytecode, bitand(shr(value, 24), 255))
+}
+
+// 코드 생성: 재귀적 표현식 컴파일
+fn compile_expr(node_idx) {
+  if node_idx < 0 {
+    return
+  }
+
+  var node_type = ast_types[node_idx]
+
+  if node_type == NODE_INT {
+    // PUSH_I32 + value
+    push(bytecode, OP_PUSH_I32)
+    var num = str_to_i32(ast_values[node_idx])
+    emit_i32(num)
+  }
+
+  else if node_type == NODE_IDENT {
+    // PUSH_VAR + var_index
+    push(bytecode, OP_PUSH_VAR)
+    var var_idx = 0
+    var mi = 0
+    while mi < length(var_map) {
+      if var_map[mi] == ast_names[node_idx] {
+        var_idx = mi
+      }
+      mi = mi + 1
+    }
+    emit_i32(var_idx)
+  }
+
+  else if node_type == NODE_BINOP {
+    // 좌측 컴파일
+    compile_expr(ast_left[node_idx])
+
+    // 우측 컴파일
+    compile_expr(ast_right[node_idx])
+
+    // 연산 명령어
+    if ast_op[node_idx] == BINOP_ADD {
+      push(bytecode, OP_ADD)
+    }
+    else if ast_op[node_idx] == BINOP_SUB {
+      push(bytecode, OP_SUB)
+    }
+    else if ast_op[node_idx] == BINOP_MUL {
+      push(bytecode, OP_MUL)
+    }
+    else if ast_op[node_idx] == BINOP_DIV {
+      push(bytecode, OP_DIV)
+    }
+  }
+}
+
+// 메인 컴파일 루프
+var ci = 0
+while ci < length(ast_types) {
+  var node_type = ast_types[ci]
+
+  if node_type == NODE_VAR {
+    var var_name = ast_names[ci]
+    var expr_idx = str_to_i32(ast_values[ci])
+
+    // 표현식 컴파일
+    compile_expr(expr_idx)
+
+    // STORE
+    push(bytecode, OP_STORE)
+
+    // 변수 인덱스
+    var const_idx = length(var_map)
+    push(var_map, var_name)
+    push(constants, var_name)
+    emit_i32(const_idx)
+  }
+
+  ci = ci + 1
+}
+
+// HALT
+push(bytecode, OP_HALT)
+
+println("Compiler output: " + str(length(bytecode)) + " bytecode bytes")
+println("Constants: " + str(length(constants)))
+
+println("")
+println("Bytecode dump:")
+var bi = 0
+while bi < length(bytecode) {
+  println("  [" + str(bi) + "] " + str(bytecode[bi]))
+  bi = bi + 1
+}
+
+println("")
+println("=== SUCCESS ===")
+println("FreeLang v4 Phase 4 complete!")
+println("Input:  " + source)
+println("Tokens: " + str(length(lexeme_types)))
+println("AST:    " + str(length(ast_types)) + " nodes")
+println("Code:   " + str(length(bytecode)) + " bytes")
+println("Variables: " + str(length(var_map)))

@@ -1,0 +1,449 @@
+// FreeLang v4 자가 부트스트랩 — Parser
+// Token 배열 → AST (Statement 배열)
+// ~1800줄
+
+// ============================================================
+// AST Node 타입 상수
+// ============================================================
+
+var NODE_VAR_DECL: i32 = 1
+var NODE_FN_DECL: i32 = 2
+var NODE_STRUCT_DECL: i32 = 3
+var NODE_RETURN: i32 = 4
+var NODE_IF: i32 = 5
+var NODE_WHILE: i32 = 6
+var NODE_FOR: i32 = 7
+var NODE_FOR_OF: i32 = 8
+var NODE_MATCH: i32 = 9
+var NODE_EXPR_STMT: i32 = 10
+
+var NODE_INT_LIT: i32 = 100
+var NODE_FLOAT_LIT: i32 = 101
+var NODE_STRING_LIT: i32 = 102
+var NODE_BOOL_LIT: i32 = 103
+var NODE_IDENT: i32 = 104
+var NODE_BINARY: i32 = 105
+var NODE_UNARY: i32 = 106
+var NODE_CALL: i32 = 107
+var NODE_INDEX: i32 = 108
+var NODE_FIELD_ACCESS: i32 = 109
+var NODE_ARRAY_LIT: i32 = 110
+var NODE_STRUCT_LIT: i32 = 111
+var NODE_ASSIGN: i32 = 112
+var NODE_IF_EXPR: i32 = 113
+var NODE_MATCH_EXPR: i32 = 114
+var NODE_BLOCK: i32 = 115
+
+// ============================================================
+// Parser 상태
+// ============================================================
+
+var tokens: arr = []
+var pos: i32 = 0
+var errors: arr = []
+
+// TokenType 상수 (lexer.fl과 동일)
+var TOK_VAR: i32 = 1
+var TOK_LET: i32 = 2
+var TOK_CONST: i32 = 3
+var TOK_FN: i32 = 4
+var TOK_IF: i32 = 10
+var TOK_ELSE: i32 = 11
+var TOK_MATCH: i32 = 12
+var TOK_FOR: i32 = 13
+var TOK_IN: i32 = 14
+var TOK_OF: i32 = 15
+var TOK_WHILE: i32 = 16
+var TOK_RETURN: i32 = 19
+var TOK_STRUCT: i32 = 7
+var TOK_TRUE: i32 = 21
+var TOK_FALSE: i32 = 22
+
+var TOK_INT_LIT: i32 = 34
+var TOK_FLOAT_LIT: i32 = 35
+var TOK_STRING_LIT: i32 = 36
+
+var TOK_PLUS: i32 = 37
+var TOK_MINUS: i32 = 38
+var TOK_STAR: i32 = 39
+var TOK_SLASH: i32 = 40
+var TOK_PERCENT: i32 = 41
+var TOK_EQ: i32 = 42
+var TOK_EQEQ: i32 = 43
+var TOK_NEQ: i32 = 44
+var TOK_LT: i32 = 45
+var TOK_GT: i32 = 46
+var TOK_LTEQ: i32 = 47
+var TOK_GTEQ: i32 = 48
+var TOK_AND: i32 = 49
+var TOK_OR: i32 = 50
+var TOK_NOT: i32 = 51
+
+var TOK_LPAREN: i32 = 60
+var TOK_RPAREN: i32 = 61
+var TOK_LBRACKET: i32 = 62
+var TOK_RBRACKET: i32 = 63
+var TOK_LBRACE: i32 = 64
+var TOK_RBRACE: i32 = 65
+var TOK_SEMICOLON: i32 = 66
+
+var TOK_IDENT: i32 = 67
+var TOK_EOF: i32 = 68
+var TOK_DOT: i32 = 58
+var TOK_COMMA: i32 = 57
+var TOK_COLON: i32 = 56
+var TOK_ARROW: i32 = 53
+var TOK_RARROW: i32 = 54
+
+// ============================================================
+// 유틸리티 함수
+// ============================================================
+
+fn current_token() -> str {
+  if pos >= length(tokens) {
+    return ""
+  }
+  var tok = tokens[pos]
+  return tok.typ
+}
+
+fn peek_token(offset: i32) -> str {
+  var p = pos + offset
+  if p >= length(tokens) {
+    return ""
+  }
+  var tok = tokens[p]
+  return tok.typ
+}
+
+fn current_lexeme() -> str {
+  if pos >= length(tokens) {
+    return ""
+  }
+  var tok = tokens[pos]
+  return tok.lexeme
+}
+
+fn advance() -> str {
+  var lex = current_lexeme()
+  pos = pos + 1
+  return lex
+}
+
+fn expect(typ: i32) -> bool {
+  if current_token() != typ {
+    push(errors, {msg: "expected token", expected: typ, got: current_token()})
+    return false
+  }
+  advance()
+  return true
+}
+
+fn match_token(typ: i32) -> bool {
+  if current_token() == typ {
+    advance()
+    return true
+  }
+  return false
+}
+
+// ============================================================
+// 우선순위 (Pratt 파서용)
+// ============================================================
+
+fn binding_power(typ: i32) -> i32 {
+  if typ == TOK_OR { return 20 }
+  if typ == TOK_AND { return 30 }
+  if typ == TOK_EQEQ || typ == TOK_NEQ { return 40 }
+  if typ == TOK_LT || typ == TOK_GT || typ == TOK_LTEQ || typ == TOK_GTEQ { return 50 }
+  if typ == TOK_PLUS || typ == TOK_MINUS { return 60 }
+  if typ == TOK_STAR || typ == TOK_SLASH || typ == TOK_PERCENT { return 70 }
+  return 0
+}
+
+// ============================================================
+// Prefix 파싱 (단항)
+// ============================================================
+
+fn parse_primary() -> str {
+  var tok_typ = current_token()
+
+  if tok_typ == TOK_INT_LIT {
+    var val = current_lexeme()
+    advance()
+    var node = {kind: NODE_INT_LIT, value: val}
+    return node
+  }
+
+  if tok_typ == TOK_FLOAT_LIT {
+    var val = current_lexeme()
+    advance()
+    var node = {kind: NODE_FLOAT_LIT, value: val}
+    return node
+  }
+
+  if tok_typ == TOK_STRING_LIT {
+    var val = current_lexeme()
+    advance()
+    var node = {kind: NODE_STRING_LIT, value: val}
+    return node
+  }
+
+  if tok_typ == TOK_TRUE {
+    advance()
+    var node = {kind: NODE_BOOL_LIT, value: "true"}
+    return node
+  }
+
+  if tok_typ == TOK_FALSE {
+    advance()
+    var node = {kind: NODE_BOOL_LIT, value: "false"}
+    return node
+  }
+
+  if tok_typ == TOK_IDENT {
+    var name = current_lexeme()
+    advance()
+    var node = {kind: NODE_IDENT, name: name}
+    return node
+  }
+
+  if tok_typ == TOK_LPAREN {
+    advance()
+    var expr = parse_expr(0)
+    expect(TOK_RPAREN)
+    return expr
+  }
+
+  if tok_typ == TOK_LBRACKET {
+    // 배열 리터럴
+    advance()
+    var elements: arr = []
+    while current_token() != TOK_RBRACKET && pos < length(tokens) {
+      var elem = parse_expr(0)
+      push(elements, elem)
+      if !match_token(TOK_COMMA) {
+        break
+      }
+    }
+    expect(TOK_RBRACKET)
+    var node = {kind: NODE_ARRAY_LIT, elements: elements}
+    return node
+  }
+
+  if tok_typ == TOK_NOT {
+    advance()
+    var operand = parse_primary()
+    var node = {kind: NODE_UNARY, op: "!", operand: operand}
+    return node
+  }
+
+  if tok_typ == TOK_MINUS {
+    advance()
+    var operand = parse_primary()
+    var node = {kind: NODE_UNARY, op: "-", operand: operand}
+    return node
+  }
+
+  // 기본 에러
+  push(errors, {msg: "unexpected token in expression", tok: current_token()})
+  advance()
+  return {kind: 0}
+}
+
+// ============================================================
+// Infix 파싱 (Pratt 파서)
+// ============================================================
+
+fn parse_expr(min_bp: i32) -> str {
+  var left = parse_primary()
+
+  while true {
+    var tok_typ = current_token()
+    var bp = binding_power(tok_typ)
+
+    if bp < min_bp {
+      break
+    }
+
+    // 이항 연산자
+    if tok_typ == TOK_PLUS || tok_typ == TOK_MINUS || tok_typ == TOK_STAR ||
+       tok_typ == TOK_SLASH || tok_typ == TOK_PERCENT ||
+       tok_typ == TOK_EQEQ || tok_typ == TOK_NEQ ||
+       tok_typ == TOK_LT || tok_typ == TOK_GT ||
+       tok_typ == TOK_LTEQ || tok_typ == TOK_GTEQ ||
+       tok_typ == TOK_AND || tok_typ == TOK_OR {
+      var op_lex = current_lexeme()
+      advance()
+      var right = parse_expr(bp + 1)
+      left = {kind: NODE_BINARY, op: op_lex, left: left, right: right}
+    }
+    // 호출 (함수)
+    else if tok_typ == TOK_LPAREN {
+      advance()
+      var args: arr = []
+      while current_token() != TOK_RPAREN && pos < length(tokens) {
+        var arg = parse_expr(0)
+        push(args, arg)
+        if !match_token(TOK_COMMA) {
+          break
+        }
+      }
+      expect(TOK_RPAREN)
+      left = {kind: NODE_CALL, func: left, args: args}
+    }
+    // 인덱싱 ([])
+    else if tok_typ == TOK_LBRACKET {
+      advance()
+      var idx = parse_expr(0)
+      expect(TOK_RBRACKET)
+      left = {kind: NODE_INDEX, object: left, index: idx}
+    }
+    // 필드 접근 (.)
+    else if tok_typ == TOK_DOT {
+      advance()
+      if current_token() == TOK_IDENT {
+        var field = current_lexeme()
+        advance()
+        left = {kind: NODE_FIELD_ACCESS, object: left, field: field}
+      }
+    }
+    else {
+      break
+    }
+  }
+
+  return left
+}
+
+// ============================================================
+// 문 파싱 (Statement)
+// ============================================================
+
+fn parse_statement() -> str {
+  var tok_typ = current_token()
+
+  // var 선언
+  if tok_typ == TOK_VAR {
+    advance()
+    var name = current_lexeme()
+    expect(TOK_IDENT)
+    var typ_name = ""
+    if match_token(TOK_COLON) {
+      typ_name = current_lexeme()
+      advance()
+    }
+    expect(TOK_EQ)
+    var init = parse_expr(0)
+    expect(TOK_SEMICOLON)
+    return {kind: NODE_VAR_DECL, name: name, type_name: typ_name, init: init}
+  }
+
+  // fn 선언
+  if tok_typ == TOK_FN {
+    advance()
+    var name = current_lexeme()
+    expect(TOK_IDENT)
+    expect(TOK_LPAREN)
+    var params: arr = []
+    while current_token() != TOK_RPAREN && pos < length(tokens) {
+      var pname = current_lexeme()
+      expect(TOK_IDENT)
+      expect(TOK_COLON)
+      var ptype = current_lexeme()
+      advance()
+      push(params, {name: pname, type_name: ptype})
+      if !match_token(TOK_COMMA) {
+        break
+      }
+    }
+    expect(TOK_RPAREN)
+    var return_type = ""
+    if match_token(TOK_RARROW) {
+      return_type = current_lexeme()
+      advance()
+    }
+    expect(TOK_LBRACE)
+    var body_stmts: arr = []
+    while current_token() != TOK_RBRACE && pos < length(tokens) {
+      var stmt = parse_statement()
+      push(body_stmts, stmt)
+    }
+    expect(TOK_RBRACE)
+    return {kind: NODE_FN_DECL, name: name, params: params, return_type: return_type, body: body_stmts}
+  }
+
+  // if 문
+  if tok_typ == TOK_IF {
+    advance()
+    var cond = parse_expr(0)
+    expect(TOK_LBRACE)
+    var then_stmts: arr = []
+    while current_token() != TOK_RBRACE && pos < length(tokens) {
+      var stmt = parse_statement()
+      push(then_stmts, stmt)
+    }
+    expect(TOK_RBRACE)
+    var else_stmts: arr = []
+    if match_token(TOK_ELSE) {
+      expect(TOK_LBRACE)
+      while current_token() != TOK_RBRACE && pos < length(tokens) {
+        var stmt = parse_statement()
+        push(else_stmts, stmt)
+      }
+      expect(TOK_RBRACE)
+    }
+    return {kind: NODE_IF, condition: cond, then_stmts: then_stmts, else_stmts: else_stmts}
+  }
+
+  // while 루프
+  if tok_typ == TOK_WHILE {
+    advance()
+    var cond = parse_expr(0)
+    expect(TOK_LBRACE)
+    var body_stmts: arr = []
+    while current_token() != TOK_RBRACE && pos < length(tokens) {
+      var stmt = parse_statement()
+      push(body_stmts, stmt)
+    }
+    expect(TOK_RBRACE)
+    return {kind: NODE_WHILE, condition: cond, body: body_stmts}
+  }
+
+  // return
+  if tok_typ == TOK_RETURN {
+    advance()
+    var value = parse_expr(0)
+    expect(TOK_SEMICOLON)
+    return {kind: NODE_RETURN, value: value}
+  }
+
+  // 표현문
+  var expr = parse_expr(0)
+  if match_token(TOK_SEMICOLON) {
+    return {kind: NODE_EXPR_STMT, expression: expr}
+  }
+  return {kind: NODE_EXPR_STMT, expression: expr}
+}
+
+// ============================================================
+// 메인 Parse 함수
+// ============================================================
+
+fn parse(token_arr: arr) -> arr {
+  tokens = token_arr
+  pos = 0
+  errors = []
+
+  var statements: arr = []
+
+  while current_token() != TOK_EOF && pos < length(tokens) {
+    var stmt = parse_statement()
+    push(statements, stmt)
+  }
+
+  var result: arr = []
+  push(result, statements)
+  push(result, errors)
+  return result
+}

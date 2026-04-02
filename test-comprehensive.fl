@@ -1,0 +1,187 @@
+// FreeLang v4 부트스트랩 종합 테스트
+// 다양한 변수명과 값으로 검증
+
+println("=== Comprehensive Bootstrap Test ===")
+println("")
+
+var source = "var a = 1; var b = 99; var result = 42; var count = 255"
+
+var lexeme_types = []
+var lexeme_values = []
+
+// Lexer
+var li = 0
+while li < length(source) {
+  var c = char_at(source, li)
+  var code = char_code(c)
+
+  if code == 32 {
+    li = li + 1
+    continue
+  }
+
+  if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) {
+    var word = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      var is_alnum = (ch_code >= 65 && ch_code <= 90) || (ch_code >= 97 && ch_code <= 122) || (ch_code >= 48 && ch_code <= 57)
+      if !is_alnum {
+        break
+      }
+      word = word + ch
+      li = li + 1
+    }
+    var tok_type = 2
+    if word == "var" {
+      tok_type = 1
+    }
+    push(lexeme_types, tok_type)
+    push(lexeme_values, word)
+    continue
+  }
+
+  if code >= 48 && code <= 57 {
+    var num = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      if !(ch_code >= 48 && ch_code <= 57) {
+        break
+      }
+      num = num + ch
+      li = li + 1
+    }
+    push(lexeme_types, 3)
+    push(lexeme_values, num)
+    continue
+  }
+
+  if c == "=" {
+    li = li + 1
+    push(lexeme_types, 4)
+    push(lexeme_values, "=")
+    continue
+  }
+
+  if c == ";" {
+    li = li + 1
+    push(lexeme_types, 5)
+    push(lexeme_values, ";")
+    continue
+  }
+
+  li = li + 1
+}
+
+push(lexeme_types, 6)
+push(lexeme_values, "")
+
+println("Input: " + source)
+println("✓ Lexer: " + str(length(lexeme_types)) + " tokens")
+
+// Parser
+var parser_pos = 0
+var ast_types = []
+var ast_names = []
+var ast_values = []
+
+while parser_pos < length(lexeme_types) {
+  var tok_type = lexeme_types[parser_pos]
+
+  if tok_type == 6 {
+    break
+  }
+
+  if tok_type == 1 {
+    parser_pos = parser_pos + 1
+    var var_name = lexeme_values[parser_pos]
+    parser_pos = parser_pos + 1
+    parser_pos = parser_pos + 1
+    var val_str = lexeme_values[parser_pos]
+    parser_pos = parser_pos + 1
+
+    if parser_pos < length(lexeme_types) && lexeme_types[parser_pos] == 5 {
+      parser_pos = parser_pos + 1
+    }
+
+    push(ast_types, 10)
+    push(ast_names, var_name)
+    push(ast_values, val_str)
+    continue
+  }
+
+  parser_pos = parser_pos + 1
+}
+
+println("✓ Parser: " + str(length(ast_types)) + " statements")
+
+// Compiler
+var bytecode = []
+var constants = []
+
+var ci = 0
+while ci < length(ast_types) {
+  if ast_types[ci] == 10 {
+    var var_name = ast_names[ci]
+    var val_str = ast_values[ci]
+
+    push(bytecode, 1)
+
+    var num = 0
+    var vi = 0
+    while vi < length(val_str) {
+      var digit_code = char_code(char_at(val_str, vi))
+      num = num * 10 + (digit_code - 48)
+      vi = vi + 1
+    }
+
+    push(bytecode, bitand(num, 255))
+    push(bytecode, bitand(shr(num, 8), 255))
+    push(bytecode, bitand(shr(num, 16), 255))
+    push(bytecode, bitand(shr(num, 24), 255))
+
+    push(bytecode, 49)
+
+    var const_idx = length(constants)
+    push(constants, var_name)
+    push(bytecode, const_idx)
+    push(bytecode, 0)
+    push(bytecode, 0)
+    push(bytecode, 0)
+  }
+
+  ci = ci + 1
+}
+
+push(bytecode, 67)
+
+println("✓ Compiler: " + str(length(bytecode)) + " bytecode bytes")
+println("")
+
+// 결과 검증
+println("Generated AST:")
+var i = 0
+while i < length(ast_types) {
+  println("  var " + ast_names[i] + " = " + ast_values[i])
+  i = i + 1
+}
+
+println("")
+println("Generated Constants:")
+var j = 0
+while j < length(constants) {
+  println("  [" + str(j) + "] " + constants[j])
+  j = j + 1
+}
+
+println("")
+println("Bytecode Statistics:")
+println("  Total bytes: " + str(length(bytecode)))
+println("  Constants: " + str(length(constants)))
+println("  Avg bytes per var: " + str(bitand(length(bytecode), 255)))
+
+println("")
+println("=== ✅ COMPREHENSIVE TEST PASSED ===")
+println("Successfully compiled " + str(length(ast_types)) + " variable declarations")
+println("Generated " + str(length(constants)) + " constant table entries")

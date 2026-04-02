@@ -1344,7 +1344,7 @@ export class Compiler {
         "println", "print", "read_line", "read_file", "write_file",
         "i32", "i64", "f64", "str",
         "push", "pop", "slice", "clone", "length",
-        "char_at", "contains", "split", "trim", "to_upper", "to_lower",
+        "char_at", "char_code", "chr", "contains", "split", "trim", "to_upper", "to_lower",
         "abs", "min", "max", "pow", "sqrt",
         "range", "channel", "panic", "typeof", "assert",
         // Bitwise Operations (5) - A-1

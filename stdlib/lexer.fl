@@ -1,0 +1,549 @@
+// FreeLang v4 자가 부트스트랩 — Lexer
+// 소스코드 → Token 배열
+// ~700줄
+
+// ============================================================
+// TokenType 상수 (67개)
+// ============================================================
+
+var TOK_VAR: i32 = 1
+var TOK_LET: i32 = 2
+var TOK_CONST: i32 = 3
+var TOK_FN: i32 = 4
+var TOK_ASYNC: i32 = 5
+var TOK_AWAIT: i32 = 6
+var TOK_STRUCT: i32 = 7
+var TOK_TRAIT: i32 = 8
+var TOK_IMPL: i32 = 9
+var TOK_IF: i32 = 10
+var TOK_ELSE: i32 = 11
+var TOK_MATCH: i32 = 12
+var TOK_FOR: i32 = 13
+var TOK_IN: i32 = 14
+var TOK_OF: i32 = 15
+var TOK_WHILE: i32 = 16
+var TOK_BREAK: i32 = 17
+var TOK_CONTINUE: i32 = 18
+var TOK_RETURN: i32 = 19
+var TOK_SPAWN: i32 = 20
+var TOK_TRUE: i32 = 21
+var TOK_FALSE: i32 = 22
+var TOK_AS: i32 = 23
+var TOK_IMPORT: i32 = 24
+var TOK_EXPORT: i32 = 25
+var TOK_FROM: i32 = 26
+
+// 타입 이름
+var TOK_TYPE_I32: i32 = 27
+var TOK_TYPE_I64: i32 = 28
+var TOK_TYPE_F64: i32 = 29
+var TOK_TYPE_BOOL: i32 = 30
+var TOK_TYPE_STRING: i32 = 31
+var TOK_TYPE_VOID: i32 = 32
+var TOK_TYPE_CHANNEL: i32 = 33
+
+// 리터럴
+var TOK_INT_LIT: i32 = 34
+var TOK_FLOAT_LIT: i32 = 35
+var TOK_STRING_LIT: i32 = 36
+
+// 연산자
+var TOK_PLUS: i32 = 37
+var TOK_MINUS: i32 = 38
+var TOK_STAR: i32 = 39
+var TOK_SLASH: i32 = 40
+var TOK_PERCENT: i32 = 41
+var TOK_EQ: i32 = 42
+var TOK_EQEQ: i32 = 43
+var TOK_NEQ: i32 = 44
+var TOK_LT: i32 = 45
+var TOK_GT: i32 = 46
+var TOK_LTEQ: i32 = 47
+var TOK_GTEQ: i32 = 48
+var TOK_AND: i32 = 49
+var TOK_OR: i32 = 50
+var TOK_NOT: i32 = 51
+var TOK_QUESTION: i32 = 52
+var TOK_ARROW: i32 = 53     // =>
+var TOK_RARROW: i32 = 54    // ->
+var TOK_LARROW: i32 = 55    // <-
+var TOK_COLON: i32 = 56
+var TOK_COMMA: i32 = 57
+var TOK_DOT: i32 = 58
+var TOK_DOTDOT: i32 = 59
+var TOK_LPAREN: i32 = 60
+var TOK_RPAREN: i32 = 61
+var TOK_LBRACKET: i32 = 62
+var TOK_RBRACKET: i32 = 63
+var TOK_LBRACE: i32 = 64
+var TOK_RBRACE: i32 = 65
+var TOK_SEMICOLON: i32 = 66
+
+// 특수
+var TOK_IDENT: i32 = 67
+var TOK_EOF: i32 = 68
+
+// ============================================================
+// Token 구조체
+// ============================================================
+
+struct Token {
+  typ: i32,
+  lexeme: str,
+  line: i32,
+  col: i32
+}
+
+// ============================================================
+// Lexer 상태 (전역)
+// ============================================================
+
+var source: str = ""
+var pos: i32 = 0
+var line: i32 = 1
+var col: i32 = 1
+var tokens: arr = []
+var errors: arr = []
+
+// ============================================================
+// 문자 분류 함수
+// ============================================================
+
+fn is_digit(c: str) -> bool {
+  if length(c) == 0 {
+    return false
+  }
+  var code = char_code(c)
+  return code >= 48 && code <= 57
+}
+
+fn is_alpha(c: str) -> bool {
+  if length(c) == 0 {
+    return false
+  }
+  var code = char_code(c)
+  // 'a'-'z' (97-122), 'A'-'Z' (65-90), '_' (95)
+  return (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code == 95
+}
+
+fn is_korean(c: str) -> bool {
+  if length(c) == 0 {
+    return false
+  }
+  var code = char_code(c)
+  // 한글: U+AC00 ~ U+D7A3 (44032 ~ 55203)
+  return code >= 0xAC00 && code <= 0xD7A3
+}
+
+fn is_whitespace(c: str) -> bool {
+  if length(c) == 0 {
+    return false
+  }
+  var code = char_code(c)
+  return code == 32 || code == 9 || code == 13
+}
+
+fn is_newline(c: str) -> bool {
+  if length(c) == 0 {
+    return false
+  }
+  return char_code(c) == 10
+}
+
+// ============================================================
+// 핵심 Lexer 함수
+// ============================================================
+
+fn current() -> str {
+  if pos >= length(source) {
+    return ""
+  }
+  return char_at(source, pos)
+}
+
+fn peek(offset: i32) -> str {
+  var p = pos + offset
+  if p >= length(source) {
+    return ""
+  }
+  return char_at(source, p)
+}
+
+fn advance() -> str {
+  var c = current()
+  if is_newline(c) {
+    line = line + 1
+    col = 1
+  } else {
+    col = col + 1
+  }
+  pos = pos + 1
+  return c
+}
+
+fn add_token(typ: i32, lexeme: str) {
+  var tok: Token = {
+    typ: typ,
+    lexeme: lexeme,
+    line: line,
+    col: col
+  }
+  push(tokens, tok)
+}
+
+fn scan_string(quote: str) -> str {
+  var start = pos
+  var start_line = line
+  var start_col = col
+
+  advance()  // skip opening quote
+
+  var result = ""
+  while true {
+    if pos >= length(source) {
+      push(errors, {line: start_line, col: start_col, message: "unterminated string"})
+      return ""
+    }
+
+    var c = current()
+    if c == quote {
+      advance()  // skip closing quote
+      return result
+    }
+
+    if c == "\\" {
+      advance()
+      var next = current()
+      if next == "n" {
+        result = result + chr(10)
+      } else if next == "t" {
+        result = result + chr(9)
+      } else if next == "r" {
+        result = result + chr(13)
+      } else if next == "\\" {
+        result = result + "\\"
+      } else if next == quote {
+        result = result + quote
+      } else {
+        result = result + next
+      }
+      advance()
+    } else {
+      result = result + c
+      advance()
+    }
+  }
+  return result
+}
+
+fn scan_number() -> str {
+  var start = pos
+  var result = ""
+
+  // 정수 부분
+  while is_digit(current()) {
+    result = result + current()
+    advance()
+  }
+
+  // 소수 부분 (.)
+  if current() == "." && is_digit(peek(1)) {
+    result = result + "."
+    advance()
+    while is_digit(current()) {
+      result = result + current()
+      advance()
+    }
+  }
+
+  return result
+}
+
+fn scan_ident() -> str {
+  var result = ""
+
+  while true {
+    var c = current()
+    if is_alpha(c) || is_digit(c) || is_korean(c) {
+      result = result + c
+      advance()
+    } else {
+      break
+    }
+  }
+
+  return result
+}
+
+fn keyword_type(word: str) -> i32 {
+  if word == "var" { return TOK_VAR }
+  if word == "let" { return TOK_LET }
+  if word == "const" { return TOK_CONST }
+  if word == "fn" { return TOK_FN }
+  if word == "async" { return TOK_ASYNC }
+  if word == "await" { return TOK_AWAIT }
+  if word == "struct" { return TOK_STRUCT }
+  if word == "trait" { return TOK_TRAIT }
+  if word == "impl" { return TOK_IMPL }
+  if word == "if" { return TOK_IF }
+  if word == "else" { return TOK_ELSE }
+  if word == "match" { return TOK_MATCH }
+  if word == "for" { return TOK_FOR }
+  if word == "in" { return TOK_IN }
+  if word == "of" { return TOK_OF }
+  if word == "while" { return TOK_WHILE }
+  if word == "break" { return TOK_BREAK }
+  if word == "continue" { return TOK_CONTINUE }
+  if word == "return" { return TOK_RETURN }
+  if word == "spawn" { return TOK_SPAWN }
+  if word == "true" { return TOK_TRUE }
+  if word == "false" { return TOK_FALSE }
+  if word == "as" { return TOK_AS }
+  if word == "import" { return TOK_IMPORT }
+  if word == "export" { return TOK_EXPORT }
+  if word == "from" { return TOK_FROM }
+  if word == "i32" { return TOK_TYPE_I32 }
+  if word == "i64" { return TOK_TYPE_I64 }
+  if word == "f64" { return TOK_TYPE_F64 }
+  if word == "bool" { return TOK_TYPE_BOOL }
+  if word == "str" { return TOK_TYPE_STRING }
+  if word == "void" { return TOK_TYPE_VOID }
+  if word == "channel" { return TOK_TYPE_CHANNEL }
+
+  return TOK_IDENT
+}
+
+// ============================================================
+// 메인 Tokenize 함수
+// ============================================================
+
+fn tokenize(src: str) -> arr {
+  source = src
+  pos = 0
+  line = 1
+  col = 1
+  tokens = []
+  errors = []
+
+  while pos < length(source) {
+    var c = current()
+
+    // 공백 무시
+    if is_whitespace(c) {
+      advance()
+      continue
+    }
+
+    // 줄바꿈
+    if is_newline(c) {
+      advance()
+      continue
+    }
+
+    // 주석 (// 또는 /* */)
+    if c == "/" {
+      if peek(1) == "/" {
+        // 줄 주석
+        while !is_newline(current()) && pos < length(source) {
+          advance()
+        }
+        continue
+      } else if peek(1) == "*" {
+        // 블록 주석
+        advance()  // /
+        advance()  // *
+        while true {
+          if pos >= length(source) {
+            push(errors, {line: line, col: col, message: "unterminated block comment"})
+            break
+          }
+          if current() == "*" && peek(1) == "/" {
+            advance()  // *
+            advance()  // /
+            break
+          }
+          advance()
+        }
+        continue
+      }
+    }
+
+    // 문자열 리터럴
+    if c == "\"" {
+      var str_val = scan_string("\"")
+      add_token(TOK_STRING_LIT, str_val)
+      continue
+    }
+
+    if c == "'" {
+      var str_val = scan_string("'")
+      add_token(TOK_STRING_LIT, str_val)
+      continue
+    }
+
+    // 숫자
+    if is_digit(c) {
+      var num_str = scan_number()
+      if contains(num_str, ".") {
+        add_token(TOK_FLOAT_LIT, num_str)
+      } else {
+        add_token(TOK_INT_LIT, num_str)
+      }
+      continue
+    }
+
+    // 식별자 및 키워드
+    if is_alpha(c) || is_korean(c) {
+      var ident = scan_ident()
+      var typ = keyword_type(ident)
+      add_token(typ, ident)
+      continue
+    }
+
+    // 연산자 및 구두점
+    if c == "+" {
+      advance()
+      add_token(TOK_PLUS, "+")
+    } else if c == "-" {
+      advance()
+      if current() == ">" {
+        advance()
+        add_token(TOK_RARROW, "->")
+      } else {
+        add_token(TOK_MINUS, "-")
+      }
+    } else if c == "*" {
+      advance()
+      add_token(TOK_STAR, "*")
+    } else if c == "/" {
+      advance()
+      add_token(TOK_SLASH, "/")
+    } else if c == "%" {
+      advance()
+      add_token(TOK_PERCENT, "%")
+    } else if c == "=" {
+      advance()
+      if current() == "=" {
+        advance()
+        add_token(TOK_EQEQ, "==")
+      } else if current() == ">" {
+        advance()
+        add_token(TOK_ARROW, "=>")
+      } else {
+        add_token(TOK_EQ, "=")
+      }
+    } else if c == "!" {
+      advance()
+      if current() == "=" {
+        advance()
+        add_token(TOK_NEQ, "!=")
+      } else {
+        add_token(TOK_NOT, "!")
+      }
+    } else if c == "<" {
+      advance()
+      if current() == "=" {
+        advance()
+        add_token(TOK_LTEQ, "<=")
+      } else if current() == "-" {
+        advance()
+        add_token(TOK_LARROW, "<-")
+      } else {
+        add_token(TOK_LT, "<")
+      }
+    } else if c == ">" {
+      advance()
+      if current() == "=" {
+        advance()
+        add_token(TOK_GTEQ, ">=")
+      } else {
+        add_token(TOK_GT, ">")
+      }
+    } else if c == "&" {
+      advance()
+      if current() == "&" {
+        advance()
+        add_token(TOK_AND, "&&")
+      }
+    } else if c == "|" {
+      advance()
+      if current() == "|" {
+        advance()
+        add_token(TOK_OR, "||")
+      }
+    } else if c == "?" {
+      advance()
+      add_token(TOK_QUESTION, "?")
+    } else if c == ":" {
+      advance()
+      add_token(TOK_COLON, ":")
+    } else if c == "," {
+      advance()
+      add_token(TOK_COMMA, ",")
+    } else if c == "." {
+      advance()
+      if current() == "." {
+        advance()
+        add_token(TOK_DOTDOT, "..")
+      } else {
+        add_token(TOK_DOT, ".")
+      }
+    } else if c == "(" {
+      advance()
+      add_token(TOK_LPAREN, "(")
+    } else if c == ")" {
+      advance()
+      add_token(TOK_RPAREN, ")")
+    } else if c == "[" {
+      advance()
+      add_token(TOK_LBRACKET, "[")
+    } else if c == "]" {
+      advance()
+      add_token(TOK_RBRACKET, "]")
+    } else if c == "{" {
+      advance()
+      add_token(TOK_LBRACE, "{")
+    } else if c == "}" {
+      advance()
+      add_token(TOK_RBRACE, "}")
+    } else if c == ";" {
+      advance()
+      add_token(TOK_SEMICOLON, ";")
+    } else {
+      push(errors, {line: line, col: col, message: "unexpected character: " + c})
+      advance()
+    }
+  }
+
+  add_token(TOK_EOF, "")
+
+  // 결과 반환
+  var result: arr = []
+  push(result, tokens)
+  push(result, errors)
+  return result
+}
+
+// ============================================================
+// 테스트
+// ============================================================
+
+var test_code = "var x: i32 = 42"
+var lex_result = tokenize(test_code)
+var test_tokens = lex_result[0]
+var test_errors = lex_result[1]
+
+println("=== Lexer Test ===")
+println("Input: " + test_code)
+println("Tokens:")
+var ti: i32 = 0
+while ti < length(test_tokens) {
+  var tok = test_tokens[ti]
+  println("  " + str(tok.typ) + ": " + tok.lexeme)
+  ti = ti + 1
+}
+if length(test_errors) > 0 {
+  println("Errors: " + str(length(test_errors)))
+} else {
+  println("Success!")
+}

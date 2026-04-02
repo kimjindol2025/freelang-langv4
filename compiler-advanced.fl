@@ -1,0 +1,227 @@
+// FreeLang v4 자가 부트스트랩 — 고급 컴파일러
+// 여러 변수 선언 지원
+
+println("=== FreeLang v4 Advanced Bootstrap Compiler ===")
+println("")
+
+// 토큰 타입
+var TOK_VAR: i32 = 1
+var TOK_IDENT: i32 = 2
+var TOK_INT: i32 = 3
+var TOK_EQ: i32 = 4
+var TOK_SEMI: i32 = 5
+var TOK_EOF: i32 = 6
+
+// AST 노드 타입
+var NODE_VAR: i32 = 10
+
+// 옵코드
+var OP_PUSH_I32: i32 = 1
+var OP_STORE: i32 = 49
+var OP_HALT: i32 = 67
+
+// ============================================================
+// LEXER (더 긴 소스 처리)
+// ============================================================
+
+println("--- PHASE 1: LEXER ---")
+
+// 여러 변수 선언
+var source = "var x = 10; var y = 20; var z = 42"
+
+var lexeme_types = []
+var lexeme_values = []
+
+var li = 0
+while li < length(source) {
+  var c = char_at(source, li)
+  var code = char_code(c)
+
+  // 공백 무시
+  if code == 32 {
+    li = li + 1
+    continue
+  }
+
+  // 알파벳
+  if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) {
+    var word = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      var is_alnum = (ch_code >= 65 && ch_code <= 90) || (ch_code >= 97 && ch_code <= 122) || (ch_code >= 48 && ch_code <= 57)
+      if !is_alnum {
+        break
+      }
+      word = word + ch
+      li = li + 1
+    }
+
+    var tok_type = TOK_IDENT
+    if word == "var" {
+      tok_type = TOK_VAR
+    }
+    push(lexeme_types, tok_type)
+    push(lexeme_values, word)
+    continue
+  }
+
+  // 숫자
+  if code >= 48 && code <= 57 {
+    var num = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      if !(ch_code >= 48 && ch_code <= 57) {
+        break
+      }
+      num = num + ch
+      li = li + 1
+    }
+    push(lexeme_types, TOK_INT)
+    push(lexeme_values, num)
+    continue
+  }
+
+  // 연산자
+  if c == "=" {
+    li = li + 1
+    push(lexeme_types, TOK_EQ)
+    push(lexeme_values, "=")
+    continue
+  }
+
+  if c == ";" {
+    li = li + 1
+    push(lexeme_types, TOK_SEMI)
+    push(lexeme_values, ";")
+    continue
+  }
+
+  li = li + 1
+}
+
+push(lexeme_types, TOK_EOF)
+push(lexeme_values, "")
+
+println("Input: " + source)
+println("Tokens: " + str(length(lexeme_types)))
+
+// ============================================================
+// PARSER
+// ============================================================
+
+println("")
+println("--- PHASE 2: PARSER ---")
+
+var parser_pos = 0
+var ast_types = []
+var ast_names = []
+var ast_values = []
+
+while parser_pos < length(lexeme_types) {
+  var tok_type = lexeme_types[parser_pos]
+
+  if tok_type == TOK_EOF {
+    break
+  }
+
+  if tok_type == TOK_VAR {
+    parser_pos = parser_pos + 1
+
+    // 변수명
+    var var_name = lexeme_values[parser_pos]
+    parser_pos = parser_pos + 1
+
+    // = 스킵
+    parser_pos = parser_pos + 1
+
+    // 값
+    var val_str = lexeme_values[parser_pos]
+    parser_pos = parser_pos + 1
+
+    // ; 스킵
+    if parser_pos < length(lexeme_types) && lexeme_types[parser_pos] == TOK_SEMI {
+      parser_pos = parser_pos + 1
+    }
+
+    push(ast_types, NODE_VAR)
+    push(ast_names, var_name)
+    push(ast_values, val_str)
+    continue
+  }
+
+  parser_pos = parser_pos + 1
+}
+
+println("AST Statements: " + str(length(ast_types)))
+var pi = 0
+while pi < length(ast_types) {
+  if ast_types[pi] == NODE_VAR {
+    println("  var " + ast_names[pi] + " = " + ast_values[pi])
+  }
+  pi = pi + 1
+}
+
+// ============================================================
+// COMPILER
+// ============================================================
+
+println("")
+println("--- PHASE 3: COMPILER ---")
+
+var bytecode = []
+var constants = []
+
+var ci = 0
+while ci < length(ast_types) {
+  if ast_types[ci] == NODE_VAR {
+    var var_name = ast_names[ci]
+    var val_str = ast_values[ci]
+
+    push(bytecode, OP_PUSH_I32)
+
+    // 문자열 → 정수
+    var num = 0
+    var vi = 0
+    while vi < length(val_str) {
+      var digit_code = char_code(char_at(val_str, vi))
+      num = num * 10 + (digit_code - 48)
+      vi = vi + 1
+    }
+
+    push(bytecode, bitand(num, 255))
+    push(bytecode, bitand(shr(num, 8), 255))
+    push(bytecode, bitand(shr(num, 16), 255))
+    push(bytecode, bitand(shr(num, 24), 255))
+
+    push(bytecode, OP_STORE)
+    var const_idx = length(constants)
+    push(constants, var_name)
+    push(bytecode, const_idx)
+    push(bytecode, 0)
+    push(bytecode, 0)
+    push(bytecode, 0)
+  }
+
+  ci = ci + 1
+}
+
+push(bytecode, OP_HALT)
+
+println("Bytecode: " + str(length(bytecode)) + " bytes")
+println("Constants: " + str(length(constants)))
+
+var bi = 0
+while bi < length(bytecode) {
+  println("  [" + str(bi) + "] 0x" + str(bytecode[bi]))
+  bi = bi + 1
+}
+
+println("")
+println("=== COMPILATION SUCCESSFUL ===")
+println("Source lines:   3")
+println("Total tokens:   " + str(length(lexeme_types) - 1))
+println("Statements:     " + str(length(ast_types)))
+println("Constants:      " + str(length(constants)))
+println("Bytecode size:  " + str(length(bytecode)) + " bytes")

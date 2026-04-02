@@ -1,0 +1,282 @@
+// FreeLang v4 자가 부트스트랩 — Standalone Compiler
+// 함수 없이 전체 파이프라인을 직접 실행
+// Lexer → Parser → Compiler
+
+// ============================================================
+// TokenType 상수 (10진수)
+// ============================================================
+
+var TOK_VAR: i32 = 1
+var TOK_INT_LIT: i32 = 34
+var TOK_IDENT: i32 = 67
+var TOK_EQ: i32 = 42
+var TOK_SEMICOLON: i32 = 66
+var TOK_COLON: i32 = 56
+var TOK_LPAREN: i32 = 60
+var TOK_RPAREN: i32 = 61
+var TOK_LBRACE: i32 = 64
+var TOK_RBRACE: i32 = 65
+var TOK_EOF: i32 = 68
+var TOK_PLUS: i32 = 37
+
+// AST Node 타입 상수
+var NODE_VAR_DECL: i32 = 1
+var NODE_INT_LIT: i32 = 100
+
+// Op 코드 (10진수)
+var OP_PUSH_I32: i32 = 1
+var OP_ADD_I32: i32 = 16
+var OP_STORE_GLOBAL: i32 = 49
+var OP_LOAD_GLOBAL: i32 = 50
+var OP_HALT: i32 = 67
+
+// ============================================================
+// PHASE 1: LEXER (토큰화)
+// ============================================================
+
+println("=== PHASE 1: LEXER ===")
+
+var source = "var x = 42"
+var lex_tokens = []
+
+// 토큰화 루프
+var li = 0
+while li < length(source) {
+  var c = char_at(source, li)
+  var code = char_code(c)
+
+  // 공백 무시
+  if code == 32 {
+    li = li + 1
+    continue
+  }
+
+  // 알파벳/식별자
+  if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code == 95 {
+    var word = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      if !((ch_code >= 65 && ch_code <= 90) || (ch_code >= 97 && ch_code <= 122) || (ch_code >= 48 && ch_code <= 57) || ch_code == 95) {
+        break
+      }
+      word = word + ch
+      li = li + 1
+    }
+
+    var tok_type = TOK_IDENT
+    if word == "var" {
+      tok_type = TOK_VAR
+    }
+    push(lex_tokens, [tok_type, word])
+    continue
+  }
+
+  // 숫자
+  if code >= 48 && code <= 57 {
+    var num = ""
+    while li < length(source) {
+      var ch = char_at(source, li)
+      var ch_code = char_code(ch)
+      if !(ch_code >= 48 && ch_code <= 57) {
+        break
+      }
+      num = num + ch
+      li = li + 1
+    }
+    push(lex_tokens, [TOK_INT_LIT, num])
+    continue
+  }
+
+  // 연산자
+  if c == "=" {
+    li = li + 1
+    push(lex_tokens, [TOK_EQ, "="])
+    continue
+  }
+
+  if c == ";" {
+    li = li + 1
+    push(lex_tokens, [TOK_SEMICOLON, ";"])
+    continue
+  }
+
+  if c == ":" {
+    li = li + 1
+    push(lex_tokens, [TOK_COLON, ":"])
+    continue
+  }
+
+  if c == "(" {
+    li = li + 1
+    push(lex_tokens, [TOK_LPAREN, "("])
+    continue
+  }
+
+  if c == ")" {
+    li = li + 1
+    push(lex_tokens, [TOK_RPAREN, ")"])
+    continue
+  }
+
+  if c == "{" {
+    li = li + 1
+    push(lex_tokens, [TOK_LBRACE, "{"])
+    continue
+  }
+
+  if c == "}" {
+    li = li + 1
+    push(lex_tokens, [TOK_RBRACE, "}"])
+    continue
+  }
+
+  li = li + 1
+}
+
+push(lex_tokens, [TOK_EOF, ""])
+
+println("Tokens:")
+var lti = 0
+while lti < length(lex_tokens) {
+  var token = lex_tokens[lti]
+  println("  [" + str(token[0]) + "] " + token[1])
+  lti = lti + 1
+}
+
+// ============================================================
+// PHASE 2: PARSER (AST 생성)
+// ============================================================
+
+println("")
+println("=== PHASE 2: PARSER ===")
+
+var parser_pos = 0
+var parser_stmts = []
+
+// 간단한 파싱: var 선언만
+while parser_pos < length(lex_tokens) {
+  var curr_token = lex_tokens[parser_pos]
+  var tok_type = curr_token[0]
+  var tok_lex = curr_token[1]
+
+  if tok_type == TOK_EOF {
+    break
+  }
+
+  // var 선언 파싱
+  if tok_type == TOK_VAR {
+    parser_pos = parser_pos + 1
+
+    // 변수 이름
+    var name_tok = lex_tokens[parser_pos]
+    var var_name = name_tok[1]
+    parser_pos = parser_pos + 1
+
+    // = 스킵
+    parser_pos = parser_pos + 1
+
+    // 값 파싱
+    var val_tok = lex_tokens[parser_pos]
+    var val_type = val_tok[0]
+    var val_lex = val_tok[1]
+    parser_pos = parser_pos + 1
+
+    // ; 스킵
+    parser_pos = parser_pos + 1
+
+    var stmt = [NODE_VAR_DECL, var_name, [NODE_INT_LIT, val_lex]]
+    push(parser_stmts, stmt)
+    continue
+  }
+
+  parser_pos = parser_pos + 1
+}
+
+println("AST Statements:")
+var psi = 0
+while psi < length(parser_stmts) {
+  var stmt = parser_stmts[psi]
+  println("  " + str(stmt[0]) + ": " + stmt[1])
+  psi = psi + 1
+}
+
+// ============================================================
+// PHASE 3: COMPILER (바이트코드)
+// ============================================================
+
+println("")
+println("=== PHASE 3: COMPILER ===")
+
+var code = []
+var constants = []
+
+// var 선언 컴파일
+var csi = 0
+while csi < length(parser_stmts) {
+  var stmt = parser_stmts[csi]
+  var stmt_type = stmt[0]
+
+  if stmt_type == NODE_VAR_DECL {
+    var var_name = stmt[1]
+    var init_expr = stmt[2]
+
+    // 초기값 컴파일
+    var expr_type = init_expr[0]
+    if expr_type == NODE_INT_LIT {
+      push(code, OP_PUSH_I32)
+      var val_str = init_expr[1]
+      var num_val = 0
+      var vi = 0
+      while vi < length(val_str) {
+        var digit_char = char_at(val_str, vi)
+        var digit_code = char_code(digit_char)
+        num_val = num_val * 10 + (digit_code - 48)
+        vi = vi + 1
+      }
+      // 4바이트 Little-endian 인코딩
+      push(code, bitand(num_val, 255))
+      push(code, bitand(shr(num_val, 8), 255))
+      push(code, bitand(shr(num_val, 16), 255))
+      push(code, bitand(shr(num_val, 24), 255))
+    }
+
+    // STORE_GLOBAL
+    push(code, OP_STORE_GLOBAL)
+    var const_idx = length(constants)
+    push(constants, var_name)
+    push(code, bitand(const_idx, 255))
+    push(code, bitand(shr(const_idx, 8), 255))
+    push(code, bitand(shr(const_idx, 16), 255))
+    push(code, bitand(shr(const_idx, 24), 255))
+  }
+
+  csi = csi + 1
+}
+
+push(code, OP_HALT)
+
+println("Bytecode:")
+println("  Code bytes: " + str(length(code)))
+println("  Constants: " + str(length(constants)))
+
+var ci = 0
+while ci < length(code) {
+  var byte = code[ci]
+  println("    [" + str(ci) + "] " + str(byte))
+  ci = ci + 1
+}
+
+// ============================================================
+// 결과 요약
+// ============================================================
+
+println("")
+println("=== RESULT ===")
+println("Bootstrap Compilation Complete!")
+println("Input: " + source)
+println("Lexer: " + str(length(lex_tokens)) + " tokens")
+println("Parser: " + str(length(parser_stmts)) + " statements")
+println("Compiler: " + str(length(code)) + " bytecode bytes")
+println("")
+println("SUCCESS: FreeLang compiled FreeLang source to bytecode!")

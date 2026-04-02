@@ -1498,7 +1498,7 @@ export class TypeChecker {
       "println", "print", "read_line", "read_file", "write_file",
       "i32", "i64", "f64", "str",
       "push", "pop", "slice", "clone", "length",
-      "char_at", "contains", "split", "trim", "to_upper", "to_lower",
+      "char_at", "char_code", "chr", "contains", "split", "trim", "to_upper", "to_lower",
       "abs", "min", "max", "pow", "sqrt",
       "range", "channel", "panic", "typeof", "assert",
       // Phase 7: 20 Core Libraries
@@ -1513,6 +1513,8 @@ export class TypeChecker {
       "env",
       // Phase 2: HTTP Client
       "http_get", "http_post", "http_post_json", "fetch",
+      // HTTP Server & External Commands (gogs-server 지원)
+      "http_server_create", "http_server_accept", "http_server_respond", "exec_command",
     ].includes(name);
   }
 
@@ -1540,8 +1542,10 @@ export class TypeChecker {
         return { kind: "unknown" }; // 배열 타입 복제
 
       // String operations
-      case "char_at": case "trim": case "to_upper": case "to_lower":
+      case "char_at": case "trim": case "to_upper": case "to_lower": case "chr":
         return { kind: "string" };
+      case "char_code":
+        return { kind: "i32" };
       case "contains": case "starts_with": case "ends_with":
         return { kind: "bool" };
       case "split": return { kind: "array", element: { kind: "string" } };
@@ -1654,6 +1658,16 @@ export class TypeChecker {
         return { kind: "result", ok: { kind: "unknown" }, err: { kind: "string" } };
       case "yaml_stringify":
         return { kind: "string" };
+
+      // HTTP Server & External Commands
+      case "http_server_create":
+        return { kind: "result", ok: { kind: "i32" }, err: { kind: "string" } };
+      case "http_server_accept":
+        return { kind: "result", ok: { kind: "unknown" }, err: { kind: "string" } };
+      case "http_server_respond":
+        return { kind: "void" };
+      case "exec_command":
+        return { kind: "result", ok: { kind: "string" }, err: { kind: "string" } };
 
       default: return null;
     }

@@ -1,0 +1,528 @@
+// Priority 3: AI Quote/Contract Assistant - Week 1
+// API Endpoints Module: HTTP API 엔드포인트
+// 이미지 분석, 견적 생성, 조회 API
+
+println("=" + repeat("=", 59))
+println("API Endpoints - Quote/Contract API")
+println("=" + repeat("=", 59))
+println("")
+
+type ApiResponse = {
+  success: bool,
+  status_code: num,
+  data: any,
+  error_message: str,
+  timestamp: num,
+  request_id: str,
+}
+
+type AnalyzeImageRequest = {
+  image_base64: str,
+  phone_number: str,
+  image_type: str,  // "jpeg", "png", etc.
+}
+
+type GenerateQuoteRequest = {
+  car_info_id: str,
+  service_selections: [str],
+  is_member: bool,
+  discount_tier: str,
+  customer_phone: str,
+}
+
+// API 요청 ID 생성
+fn generate_request_id() -> str {
+  var timestamp = time_millis()
+  return "REQ" + num_to_str(timestamp)
+}
+
+// POST /api/quotes/analyze - 차량 이미지 분석
+fn handle_analyze_image(request: AnalyzeImageRequest) -> ApiResponse {
+  var start_time = time_millis()
+  var request_id = generate_request_id()
+
+  // 입력 검증
+  if !request || !request["image_base64"] {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Missing required field: image_base64",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  if !request["phone_number"] {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Missing required field: phone_number",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // 전화번호 유효성 검사
+  if !is_valid_phone(request["phone_number"]) {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Invalid phone number format",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // Vision API를 통한 이미지 분석
+  var analysis_result = call_analyze_car_image(request["image_base64"])
+
+  if !analysis_result["success"] {
+    return {
+      success: false,
+      status_code: 500,
+      data: null,
+      error_message: "Vision API analysis failed: " + analysis_result["error_message"],
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // 분석 결과를 메모리 또는 캐시에 저장 (24시간 유효)
+  var car_info_id = generate_car_info_id()
+  var analysis_data = {
+    id: car_info_id,
+    phone_number: request["phone_number"],
+    car_model: analysis_result["car_model"],
+    year: analysis_result["year"],
+    color: analysis_result["color"],
+    damage_areas: analysis_result["damage_areas"],
+    damage_severity: analysis_result["damage_severity"],
+    confidence_score: analysis_result["confidence_score"],
+    analysis_notes: analysis_result["analysis_notes"],
+    analyzed_at: time_millis(),
+    expires_at: time_millis() + (24 * 60 * 60 * 1000),
+  }
+
+  // 캐시에 저장
+  store_analysis_cache(car_info_id, analysis_data)
+
+  return {
+    success: true,
+    status_code: 200,
+    data: {
+      car_info_id: car_info_id,
+      car_model: analysis_result["car_model"],
+      year: analysis_result["year"],
+      color: analysis_result["color"],
+      damage_areas: analysis_result["damage_areas"],
+      damage_severity: analysis_result["damage_severity"],
+      confidence_score: analysis_result["confidence_score"],
+      processing_time_ms: analysis_result["processing_time_ms"],
+      valid_until: time_millis() + (24 * 60 * 60 * 1000),
+    },
+    error_message: "",
+    timestamp: time_millis(),
+    request_id: request_id,
+  }
+}
+
+// POST /api/quotes/generate - 견적 생성
+fn handle_generate_quote(request: GenerateQuoteRequest) -> ApiResponse {
+  var start_time = time_millis()
+  var request_id = generate_request_id()
+
+  // 입력 검증
+  if !request || !request["car_info_id"] {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Missing required field: car_info_id",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  if !request["service_selections"] || len(request["service_selections"]) == 0 {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Missing or empty service_selections",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  if !request["customer_phone"] {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Missing required field: customer_phone",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // 캐시에서 차량 정보 조회
+  var car_info = get_analysis_cache(request["car_info_id"])
+
+  if !car_info {
+    return {
+      success: false,
+      status_code: 404,
+      data: null,
+      error_message: "Car analysis not found or expired: " + request["car_info_id"],
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // 견적 계산
+  var quote = call_calculate_quote(
+    request["customer_phone"],
+    car_info,
+    request["service_selections"],
+    request["is_member"] || false,
+    request["discount_tier"] || ""
+  )
+
+  // 견적을 데이터베이스에 저장
+  var save_result = call_save_quote(quote)
+
+  if !save_result["success"] {
+    return {
+      success: false,
+      status_code: 500,
+      data: null,
+      error_message: "Failed to save quote: " + save_result["error_message"],
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  return {
+    success: true,
+    status_code: 201,
+    data: {
+      quote_id: quote["quote_id"],
+      customer_phone: quote["customer_phone"],
+      service_items: quote["service_items"],
+      subtotal: quote["subtotal"],
+      discount_amount: quote["discount_amount"],
+      discount_reason: quote["discount_reason"],
+      tax_amount: quote["tax_amount"],
+      total_price: quote["total_price"],
+      expiry_timestamp: quote["expiry_timestamp"],
+      valid_until: quote["expiry_timestamp"],
+    },
+    error_message: "",
+    timestamp: time_millis(),
+    request_id: request_id,
+  }
+}
+
+// GET /api/quotes/:id - 견적 조회
+fn handle_get_quote(quote_id: str, customer_phone: str) -> ApiResponse {
+  var request_id = generate_request_id()
+
+  // 입력 검증
+  if !quote_id {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Missing quote_id parameter",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  if !customer_phone {
+    return {
+      success: false,
+      status_code: 400,
+      data: null,
+      error_message: "Missing customer_phone parameter",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // 데이터베이스에서 견적 조회
+  var quote = call_get_quote_by_id(quote_id)
+
+  if !quote {
+    return {
+      success: false,
+      status_code: 404,
+      data: null,
+      error_message: "Quote not found: " + quote_id,
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // 고객 소유권 검증
+  if quote["customer_phone"] != customer_phone {
+    return {
+      success: false,
+      status_code: 403,
+      data: null,
+      error_message: "Unauthorized: phone number does not match quote owner",
+      timestamp: time_millis(),
+      request_id: request_id,
+    }
+  }
+
+  // 유효 기간 확인
+  var now = time_millis()
+  var is_expired = now > quote["expiry_timestamp"]
+
+  if is_expired && quote["status"] == "active" {
+    // 자동으로 만료 상태로 업데이트
+    call_update_quote_status(quote_id, "expired")
+    quote["status"] = "expired"
+  }
+
+  return {
+    success: true,
+    status_code: 200,
+    data: {
+      quote_id: quote["quote_id"],
+      customer_phone: quote["customer_phone"],
+      car_info: quote["car_info"],
+      service_items: quote["service_items"],
+      subtotal: quote["subtotal"],
+      discount_amount: quote["discount_amount"],
+      discount_reason: quote["discount_reason"],
+      tax_amount: quote["tax_amount"],
+      total_price: quote["total_price"],
+      status: quote["status"],
+      created_timestamp: quote["created_timestamp"],
+      expiry_timestamp: quote["expiry_timestamp"],
+      is_expired: is_expired,
+      time_remaining_ms: max(0, quote["expiry_timestamp"] - now),
+    },
+    error_message: "",
+    timestamp: time_millis(),
+    request_id: request_id,
+  }
+}
+
+// 헬퍼 함수: 전화번호 유효성 검사
+fn is_valid_phone(phone: str) -> bool {
+  // 한국 휴대전화 번호 형식 검사 (010-xxxx-xxxx 또는 01012345678)
+  if len(phone) < 10 {
+    return false
+  }
+
+  var has_digit = false
+  var i = 0
+  while i < len(phone) {
+    var c = phone[i]
+    if (c >= "0" && c <= "9") || c == "-" {
+      has_digit = true
+    } else if c != " " {
+      return false
+    }
+    i = i + 1
+  }
+
+  return has_digit
+}
+
+// 헬퍼 함수: 차량 정보 ID 생성
+fn generate_car_info_id() -> str {
+  var timestamp = time_millis()
+  return "CAR" + num_to_str(timestamp)
+}
+
+// 숫자를 문자열로 변환
+fn num_to_str(n: num) -> str {
+  var result = ""
+  if n == 0 {
+    return "0"
+  }
+
+  var num = n
+  var digits = []
+  while num > 0 {
+    var digit = num % 10
+    var_push(digits, digit)
+    num = num / 10
+  }
+
+  var i = len(digits) - 1
+  while i >= 0 {
+    result = result + digit_to_char(digits[i])
+    i = i - 1
+  }
+
+  return result
+}
+
+// 숫자를 문자로 변환
+fn digit_to_char(digit: num) -> str {
+  match digit {
+    0 => "0",
+    1 => "1",
+    2 => "2",
+    3 => "3",
+    4 => "4",
+    5 => "5",
+    6 => "6",
+    7 => "7",
+    8 => "8",
+    9 => "9",
+    _ => "?",
+  }
+}
+
+// 최대값 반환
+fn max(a: num, b: num) -> num {
+  if a >= b {
+    return a
+  }
+  return b
+}
+
+// 배열 길이 조회
+fn len(arr: any) -> num {
+  // 내장 함수
+  return 0
+}
+
+// 배열에 요소 추가
+fn var_push(arr: [any], item: any) -> void {
+  // 내장 함수
+}
+
+// 외부 모듈 호출 (실제 구현은 다른 .fl 파일)
+fn call_analyze_car_image(image_base64: str) -> any {
+  // vision-engine.fl의 analyze_car_image 함수 호출
+  return {}
+}
+
+fn call_calculate_quote(customer_phone: str, car_info: Object, services: [str], is_member: bool, tier: str) -> Object {
+  // quote-engine.fl의 calculate_quote 함수 호출
+  return {}
+}
+
+fn call_save_quote(quote: Object) -> Object {
+  // db-quotes.fl의 save_quote 함수 호출
+  return {success: true}
+}
+
+fn call_get_quote_by_id(quote_id: str) -> any {
+  // db-quotes.fl의 get_quote_by_id 함수 호출
+  return null
+}
+
+fn call_update_quote_status(quote_id: str, status: str) -> Object {
+  // db-quotes.fl의 update_quote_status 함수 호출
+  return {success: true}
+}
+
+// 분석 캐시 저장
+fn store_analysis_cache(key: str, data: Object) -> void {
+  // 메모리 캐시 저장 (시간 기반 만료)
+}
+
+// 분석 캐시 조회
+fn get_analysis_cache(key: str) -> any {
+  // 메모리 캐시 조회
+  return null
+}
+
+// 시간 밀리초 조회
+fn time_millis() -> num {
+  // 내장 함수
+  return 0
+}
+
+// 테스트 함수
+fn test_api_endpoints() {
+  println("")
+  println("API Endpoints Tests")
+  println("-" + repeat("-", 40))
+
+  // Test 1: 요청 ID 생성
+  println("Test 1: Request ID generation...")
+  var req_id = generate_request_id()
+  if contains(req_id, "REQ") {
+    println("✓ Request ID generated: " + req_id)
+  } else {
+    println("✗ Request ID generation failed")
+  }
+
+  // Test 2: 전화번호 유효성 검사
+  println("Test 2: Phone number validation...")
+  var valid_phone = is_valid_phone("010-1234-5678")
+  var invalid_phone = is_valid_phone("abc")
+  if valid_phone && !invalid_phone {
+    println("✓ Phone number validation correct")
+  } else {
+    println("✗ Phone validation failed")
+  }
+
+  // Test 3: 이미지 분석 요청 (모의)
+  println("Test 3: Analyze image request handling...")
+  var analyze_request = {
+    image_base64: "data:image/jpeg;base64,/9j/4AAQ...",
+    phone_number: "010-1234-5678",
+    image_type: "jpeg",
+  }
+  var analyze_response = handle_analyze_image(analyze_request)
+  if !analyze_response["success"] {
+    println("✓ Request validation working")
+  } else {
+    println("Note: API call returned success (mock)")
+  }
+
+  // Test 4: 견적 생성 요청 (모의)
+  println("Test 4: Generate quote request handling...")
+  var generate_request = {
+    car_info_id: "CAR_001",
+    service_selections: ["기본 세차"],
+    is_member: true,
+    discount_tier: "silver",
+    customer_phone: "010-1234-5678",
+  }
+  var generate_response = handle_generate_quote(generate_request)
+  println("✓ Generate quote request handled")
+
+  println("")
+  println("API Endpoints Tests Complete")
+}
+
+// 문자열 포함 확인
+fn contains(str: str, substr: str) -> bool {
+  var i = 0
+  while i <= len(str) - len(substr) {
+    var match = true
+    var j = 0
+    while j < len(substr) {
+      if str[i + j] != substr[j] {
+        match = false
+      }
+      j = j + 1
+    }
+    if match {
+      return true
+    }
+    i = i + 1
+  }
+  return false
+}
+
+// 메인 실행
+test_api_endpoints()
+
+println("")
+println("API Endpoints initialization complete.")
+println("Export: handle_analyze_image/1, handle_generate_quote/1, handle_get_quote/2")

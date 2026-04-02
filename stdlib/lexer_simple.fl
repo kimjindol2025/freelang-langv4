@@ -1,0 +1,146 @@
+// FreeLang v4 Lexer (단순화 버전)
+// Token을 배열로 표현: [type, lexeme, line, col]
+
+// TokenType 상수
+var TOK_VAR: i32 = 1
+var TOK_INT_LIT: i32 = 34
+var TOK_IDENT: i32 = 67
+var TOK_EQ: i32 = 42
+var TOK_SEMICOLON: i32 = 66
+var TOK_EOF: i32 = 68
+
+var source: str = ""
+var pos: i32 = 0
+var line: i32 = 1
+var col: i32 = 1
+var tokens: arr = []
+
+fn current_char() {
+  if pos >= length(source) {
+    return ""
+  }
+  return char_at(source, pos)
+}
+
+fn advance() {
+  if pos < length(source) {
+    pos = pos + 1
+    col = col + 1
+  }
+}
+
+fn is_digit(c: str) {
+  if length(c) == 0 {
+    return false
+  }
+  var code = char_code(c)
+  return code >= 48 && code <= 57
+}
+
+fn is_alpha(c: str) {
+  if length(c) == 0 {
+    return false
+  }
+  var code = char_code(c)
+  return (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code == 95
+}
+
+fn add_token(typ: i32, lexeme: str) {
+  var tok = [typ, lexeme, line, col]
+  push(tokens, tok)
+}
+
+fn scan_number() {
+  var result = ""
+  while is_digit(current_char()) {
+    result = result + current_char()
+    advance()
+  }
+  return result
+}
+
+fn scan_ident() {
+  var result = ""
+  while is_alpha(current_char()) || is_digit(current_char()) {
+    result = result + current_char()
+    advance()
+  }
+  return result
+}
+
+fn tokenize_simple(src: str) {
+  source = src
+  pos = 0
+  line = 1
+  col = 1
+  tokens = []
+
+  while pos < length(source) {
+    var c = current_char()
+    var code = char_code(c)
+
+    // 공백 무시
+    if code == 32 || code == 9 {
+      advance()
+      continue
+    }
+
+    // 숫자
+    if is_digit(c) {
+      var num = scan_number()
+      add_token(TOK_INT_LIT, num)
+      continue
+    }
+
+    // 식별자/키워드
+    if is_alpha(c) {
+      var ident = scan_ident()
+      if ident == "var" {
+        add_token(TOK_VAR, ident)
+      } else {
+        add_token(TOK_IDENT, ident)
+      }
+      continue
+    }
+
+    // 연산자
+    if c == "=" {
+      advance()
+      add_token(TOK_EQ, "=")
+      continue
+    }
+
+    if c == ";" {
+      advance()
+      add_token(TOK_SEMICOLON, ";")
+      continue
+    }
+
+    advance()
+  }
+
+  add_token(TOK_EOF, "")
+  return tokens
+}
+
+// ============================================================
+// 테스트
+// ============================================================
+
+println("=== Lexer Test ===")
+var test_input = "var x = 42;"
+var result = tokenize_simple(test_input)
+
+println("Input: " + test_input)
+println("Tokens:")
+
+var i: i32 = 0
+while i < length(result) {
+  var tok = result[i]
+  var type_id = tok[0]
+  var lexeme = tok[1]
+  println("  type:" + str(type_id) + " lexeme:" + lexeme)
+  i = i + 1
+}
+
+println("SUCCESS")

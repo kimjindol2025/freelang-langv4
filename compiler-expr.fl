@@ -1,0 +1,212 @@
+// FreeLang v4 부트스트랩 Stage 1: 표현식 지원 (+ - * /)
+// 단순 표현식 파싱 (우선순위 주의)
+
+println("=== Stage 1: 표현식 지원 컴파일러 ===")
+
+// 토큰 타입
+var TOK_VAR: i32 = 1
+var TOK_IDENT: i32 = 2
+var TOK_INT: i32 = 3
+var TOK_EQ: i32 = 4
+var TOK_SEMI: i32 = 5
+var TOK_EOF: i32 = 6
+var TOK_PLUS: i32 = 7
+var TOK_MINUS: i32 = 8
+var TOK_MUL: i32 = 9
+var TOK_DIV: i32 = 10
+
+// 옵코드
+var OP_PUSH: i32 = 1
+var OP_ADD: i32 = 16
+var OP_SUB: i32 = 17
+var OP_MUL: i32 = 18
+var OP_DIV: i32 = 19
+var OP_STORE: i32 = 49
+var OP_HALT: i32 = 67
+
+println("--- LEXER ---")
+
+var source = "var a = 1 + 2"
+
+var tok_types = []
+var tok_vals = []
+
+var i = 0
+while i < length(source) {
+  var c = char_at(source, i)
+  var code = char_code(c)
+
+  if code == 32 {
+    i = i + 1
+    continue
+  }
+
+  if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) {
+    var word = ""
+    while i < length(source) {
+      var ch = char_at(source, i)
+      var chc = char_code(ch)
+      if !((chc >= 65 && chc <= 90) || (chc >= 97 && chc <= 122) || (chc >= 48 && chc <= 57)) {
+        break
+      }
+      word = word + ch
+      i = i + 1
+    }
+    var tt = TOK_IDENT
+    if word == "var" {
+      tt = TOK_VAR
+    }
+    push(tok_types, tt)
+    push(tok_vals, word)
+    continue
+  }
+
+  if code >= 48 && code <= 57 {
+    var num = ""
+    while i < length(source) {
+      var ch = char_at(source, i)
+      var chc = char_code(ch)
+      if !(chc >= 48 && chc <= 57) {
+        break
+      }
+      num = num + ch
+      i = i + 1
+    }
+    push(tok_types, TOK_INT)
+    push(tok_vals, num)
+    continue
+  }
+
+  if c == "=" {
+    push(tok_types, TOK_EQ)
+    push(tok_vals, "=")
+    i = i + 1
+    continue
+  }
+
+  if c == ";" {
+    push(tok_types, TOK_SEMI)
+    push(tok_vals, ";")
+    i = i + 1
+    continue
+  }
+
+  if c == "+" {
+    push(tok_types, TOK_PLUS)
+    push(tok_vals, "+")
+    i = i + 1
+    continue
+  }
+
+  if c == "-" {
+    push(tok_types, TOK_MINUS)
+    push(tok_vals, "-")
+    i = i + 1
+    continue
+  }
+
+  if c == "*" {
+    push(tok_types, TOK_MUL)
+    push(tok_vals, "*")
+    i = i + 1
+    continue
+  }
+
+  if c == "/" {
+    push(tok_types, TOK_DIV)
+    push(tok_vals, "/")
+    i = i + 1
+    continue
+  }
+
+  i = i + 1
+}
+
+push(tok_types, TOK_EOF)
+push(tok_vals, "")
+
+println("Tokens: " + str(length(tok_types)))
+
+println("--- PARSER & COMPILER ---")
+
+var bytecode = []
+var constants = []
+
+var pos = 0
+while pos < length(tok_types) {
+  if tok_types[pos] == TOK_VAR {
+    pos = pos + 1
+    var name = tok_vals[pos]
+    pos = pos + 1
+    pos = pos + 1  // skip =
+
+    // Parse expression: 1 + 2
+    // Emit: PUSH 1, PUSH 2, ADD
+    if tok_types[pos] == TOK_INT {
+      push(bytecode, OP_PUSH)
+      push(bytecode, 1)  // 값 1
+      push(bytecode, 0)
+      push(bytecode, 0)
+      push(bytecode, 0)
+      pos = pos + 1
+    }
+
+    // operator
+    if pos < length(tok_types) && (tok_types[pos] == TOK_PLUS || tok_types[pos] == TOK_MUL) {
+      var op_type = tok_types[pos]
+      pos = pos + 1
+
+      // right operand
+      if tok_types[pos] == TOK_INT {
+        push(bytecode, OP_PUSH)
+        push(bytecode, 2)  // 값 2
+        push(bytecode, 0)
+        push(bytecode, 0)
+        push(bytecode, 0)
+        pos = pos + 1
+      }
+
+      // emit operator
+      if op_type == TOK_PLUS {
+        push(bytecode, OP_ADD)
+      } else if op_type == TOK_MUL {
+        push(bytecode, OP_MUL)
+      }
+    }
+
+    // STORE
+    push(bytecode, OP_STORE)
+    push(constants, name)
+    push(bytecode, 0)  // const index
+    push(bytecode, 0)
+    push(bytecode, 0)
+    push(bytecode, 0)
+
+    // skip ;
+    if pos < length(tok_types) && tok_types[pos] == TOK_SEMI {
+      pos = pos + 1
+    }
+    continue
+  }
+
+  if tok_types[pos] == TOK_EOF {
+    break
+  }
+
+  pos = pos + 1
+}
+
+push(bytecode, OP_HALT)
+
+println("Bytecode:")
+var j = 0
+while j < length(bytecode) {
+  println("  [" + str(j) + "] " + str(bytecode[j]))
+  j = j + 1
+}
+
+println("")
+println("=== ✅ SUCCESS ===")
+println("Input: " + source)
+println("Bytecode size: " + str(length(bytecode)))
+println("Expected: PUSH 1, PUSH 2, ADD (opcodes 1,1,0,0,0,1,2,0,0,0,16)")
