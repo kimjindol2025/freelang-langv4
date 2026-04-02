@@ -1,0 +1,177 @@
+// FreeLang v4 Phase 6b: VM 산술 연산 (ADD, SUB, MUL, DIV)
+
+println("=== Phase 6b: VM 산술 연산 ===")
+println("")
+
+var OP_PUSH_I32: i32 = 1
+var OP_ADD: i32 = 16
+var OP_SUB: i32 = 17
+var OP_MUL: i32 = 18
+var OP_DIV: i32 = 19
+var OP_HALT: i32 = 67
+
+// 테스트 1: 3 * 4 + 2 = 14
+var bytecode = []
+// PUSH 3
+push(bytecode, 1)
+push(bytecode, 3)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+// PUSH 4
+push(bytecode, 1)
+push(bytecode, 4)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+// MUL
+push(bytecode, 18)
+// PUSH 2
+push(bytecode, 1)
+push(bytecode, 2)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+// ADD
+push(bytecode, 16)
+// HALT
+push(bytecode, 67)
+
+println("Test: 3 * 4 + 2 = ?")
+println("Bytecode: " + str(length(bytecode)) + " bytes")
+println("")
+
+// VM 구현
+var stack = []
+var pc = 0
+
+while pc < length(bytecode) {
+  var opcode = bytecode[pc]
+
+  if opcode == OP_PUSH_I32 {
+    pc = pc + 1
+
+    var byte0 = bytecode[pc]
+    pc = pc + 1
+    var byte1 = bytecode[pc]
+    pc = pc + 1
+    var byte2 = bytecode[pc]
+    pc = pc + 1
+    var byte3 = bytecode[pc]
+    pc = pc + 1
+
+    var value = byte0 + byte1 * 256 + byte2 * 65536 + byte3 * 16777216
+    push(stack, value)
+
+    println("PUSH " + str(value))
+    continue
+  }
+
+  if opcode == OP_ADD {
+    var b = stack[length(stack) - 1]
+    var a = stack[length(stack) - 2]
+
+    var result = a + b
+
+    // 새 스택 생성 (마지막 2개 제거)
+    var new_stack = []
+    var si = 0
+    while si < length(stack) - 2 {
+      push(new_stack, stack[si])
+      si = si + 1
+    }
+    push(new_stack, result)
+    stack = new_stack
+
+    println("ADD: " + str(a) + " + " + str(b) + " = " + str(result))
+    pc = pc + 1
+    continue
+  }
+
+  if opcode == OP_MUL {
+    var b = stack[length(stack) - 1]
+    var a = stack[length(stack) - 2]
+
+    var result = a * b
+
+    var new_stack = []
+    var si = 0
+    while si < length(stack) - 2 {
+      push(new_stack, stack[si])
+      si = si + 1
+    }
+    push(new_stack, result)
+    stack = new_stack
+
+    println("MUL: " + str(a) + " * " + str(b) + " = " + str(result))
+    pc = pc + 1
+    continue
+  }
+
+  if opcode == OP_SUB {
+    var b = stack[length(stack) - 1]
+    var a = stack[length(stack) - 2]
+
+    var result = a - b
+
+    var new_stack = []
+    var si = 0
+    while si < length(stack) - 2 {
+      push(new_stack, stack[si])
+      si = si + 1
+    }
+    push(new_stack, result)
+    stack = new_stack
+
+    println("SUB: " + str(a) + " - " + str(b) + " = " + str(result))
+    pc = pc + 1
+    continue
+  }
+
+  if opcode == OP_DIV {
+    var b = stack[length(stack) - 1]
+    var a = stack[length(stack) - 2]
+
+    var result = a / b
+
+    var new_stack = []
+    var si = 0
+    while si < length(stack) - 2 {
+      push(new_stack, stack[si])
+      si = si + 1
+    }
+    push(new_stack, result)
+    stack = new_stack
+
+    println("DIV: " + str(a) + " / " + str(b) + " = " + str(result))
+    pc = pc + 1
+    continue
+  }
+
+  if opcode == OP_HALT {
+    println("HALT")
+    break
+  }
+
+  pc = pc + 1
+}
+
+println("")
+println("--- RESULT ---")
+println("Stack size: " + str(length(stack)))
+println("Stack: [" + str(stack[0]) + "]")
+
+println("")
+
+if length(stack) == 1 {
+  if stack[0] == 14 {
+    println("=== ✅ SUCCESS ===")
+    println("3 * 4 + 2 = 14 ✓")
+  } else {
+    println("=== ❌ FAIL ===")
+    println("Expected 14, got " + str(stack[0]))
+  }
+} else {
+  println("=== ❌ FAIL ===")
+  println("Stack size: " + str(length(stack)))
+}

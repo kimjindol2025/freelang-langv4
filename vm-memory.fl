@@ -1,0 +1,155 @@
+// FreeLang v4 Phase 6c: VM 변수 관리 (LOAD, STORE)
+
+println("=== Phase 6c: VM 변수 관리 (LOAD, STORE) ===")
+println("")
+
+var OP_PUSH_I32: i32 = 1
+var OP_LOAD: i32 = 50
+var OP_STORE: i32 = 49
+var OP_HALT: i32 = 67
+
+// 테스트: PUSH 10, STORE 0, LOAD 0, HALT
+// 결과: stack = [10]
+var bytecode = []
+// PUSH 10
+push(bytecode, 1)
+push(bytecode, 10)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+// STORE 0
+push(bytecode, 49)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+// LOAD 0
+push(bytecode, 50)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+push(bytecode, 0)
+// HALT
+push(bytecode, 67)
+
+println("Test: PUSH 10, STORE 0, LOAD 0, HALT")
+println("Bytecode: " + str(length(bytecode)) + " bytes")
+println("")
+
+// VM 구현
+var stack = []
+var memory = []
+var pc = 0
+
+// 메모리 초기화 (100개 슬롯)
+var mi = 0
+while mi < 100 {
+  push(memory, 0)
+  mi = mi + 1
+}
+
+println("--- VM EXECUTION ---")
+
+while pc < length(bytecode) {
+  var opcode = bytecode[pc]
+
+  if opcode == OP_PUSH_I32 {
+    pc = pc + 1
+
+    var byte0 = bytecode[pc]
+    pc = pc + 1
+    var byte1 = bytecode[pc]
+    pc = pc + 1
+    var byte2 = bytecode[pc]
+    pc = pc + 1
+    var byte3 = bytecode[pc]
+    pc = pc + 1
+
+    var value = byte0 + byte1 * 256 + byte2 * 65536 + byte3 * 16777216
+    push(stack, value)
+
+    println("PUSH " + str(value))
+    continue
+  }
+
+  if opcode == OP_STORE {
+    pc = pc + 1
+
+    var byte0 = bytecode[pc]
+    pc = pc + 1
+    var byte1 = bytecode[pc]
+    pc = pc + 1
+    var byte2 = bytecode[pc]
+    pc = pc + 1
+    var byte3 = bytecode[pc]
+    pc = pc + 1
+
+    var mem_idx = byte0 + byte1 * 256 + byte2 * 65536 + byte3 * 16777216
+
+    var val = stack[length(stack) - 1]
+
+    memory[mem_idx] = val
+
+    var new_stack = []
+    var si = 0
+    while si < length(stack) - 1 {
+      push(new_stack, stack[si])
+      si = si + 1
+    }
+    stack = new_stack
+
+    println("STORE " + str(mem_idx) + " (value: " + str(val) + ")")
+    continue
+  }
+
+  if opcode == OP_LOAD {
+    pc = pc + 1
+
+    var byte0 = bytecode[pc]
+    pc = pc + 1
+    var byte1 = bytecode[pc]
+    pc = pc + 1
+    var byte2 = bytecode[pc]
+    pc = pc + 1
+    var byte3 = bytecode[pc]
+    pc = pc + 1
+
+    var mem_idx = byte0 + byte1 * 256 + byte2 * 65536 + byte3 * 16777216
+
+    var val = memory[mem_idx]
+
+    push(stack, val)
+
+    println("LOAD " + str(mem_idx) + " (value: " + str(val) + ")")
+    continue
+  }
+
+  if opcode == OP_HALT {
+    println("HALT")
+    break
+  }
+
+  pc = pc + 1
+}
+
+println("")
+println("--- RESULT ---")
+println("Stack size: " + str(length(stack)))
+println("Stack: [" + str(stack[0]) + "]")
+println("Memory[0]: " + str(memory[0]))
+
+println("")
+
+if length(stack) == 1 {
+  if stack[0] == 10 {
+    println("=== ✅ SUCCESS ===")
+    println("PUSH 10, STORE 0, LOAD 0 ✓")
+    println("Stack = [10], Memory[0] = 10")
+  } else {
+    println("=== ❌ FAIL ===")
+    println("Expected 10, got " + str(stack[0]))
+  }
+} else {
+  println("=== ❌ FAIL ===")
+  println("Stack size: " + str(length(stack)))
+}

@@ -1,0 +1,97 @@
+// FreeLang v4 Phase 6a: 기본 VM (PUSH, HALT)
+// Stack 기반 VM 기초 구현
+
+println("=== Phase 6a: 기본 VM (PUSH, HALT) ===")
+println("")
+
+// Opcode 상수
+var OP_PUSH_I32: i32 = 1
+var OP_HALT: i32 = 67
+
+// 테스트 바이트코드: PUSH 42, HALT
+var bytecode = []
+push(bytecode, 1)      // OP_PUSH_I32
+push(bytecode, 42)     // value byte 0
+push(bytecode, 0)      // value byte 1
+push(bytecode, 0)      // value byte 2
+push(bytecode, 0)      // value byte 3
+push(bytecode, 67)     // OP_HALT
+
+println("Test: PUSH 42, HALT")
+println("Bytecode: " + str(length(bytecode)) + " bytes")
+var bi = 0
+while bi < length(bytecode) {
+  println("  [" + str(bi) + "] " + str(bytecode[bi]))
+  bi = bi + 1
+}
+println("")
+
+// ============================================================
+// VM 구현
+// ============================================================
+
+println("--- VM EXECUTION ---")
+
+var stack = []
+var pc = 0          // 프로그램 카운터
+
+while pc < length(bytecode) {
+  var opcode = bytecode[pc]
+
+  if opcode == OP_PUSH_I32 {
+    pc = pc + 1
+
+    // Little-endian 4바이트 읽기
+    var byte0 = bytecode[pc]
+    pc = pc + 1
+    var byte1 = bytecode[pc]
+    pc = pc + 1
+    var byte2 = bytecode[pc]
+    pc = pc + 1
+    var byte3 = bytecode[pc]
+    pc = pc + 1
+
+    // 값 계산
+    var value = byte0 + byte1 * 256 + byte2 * 65536 + byte3 * 16777216
+
+    // 스택에 푸시
+    push(stack, value)
+
+    println("PUSH " + str(value) + " (stack size: " + str(length(stack)) + ")")
+    continue
+  }
+
+  if opcode == OP_HALT {
+    println("HALT")
+    break
+  }
+
+  pc = pc + 1
+}
+
+println("")
+println("--- RESULT ---")
+println("Stack size: " + str(length(stack)))
+println("Stack contents:")
+var si = 0
+while si < length(stack) {
+  println("  [" + str(si) + "] " + str(stack[si]))
+  si = si + 1
+}
+
+println("")
+
+// 검증
+if length(stack) == 1 {
+  if stack[0] == 42 {
+    println("=== ✅ SUCCESS ===")
+    println("PUSH 42, HALT executed correctly")
+    println("Stack = [42]")
+  } else {
+    println("=== ❌ FAIL ===")
+    println("Stack value mismatch")
+  }
+} else {
+  println("=== ❌ FAIL ===")
+  println("Stack size mismatch")
+}
