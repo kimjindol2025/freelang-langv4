@@ -3,33 +3,33 @@
 // ==================== WorkerPool 구조 ====================
 
 struct WorkerPool {
-    name: str
-    workers: i32
-    tasks: [str]
-    results: [str]
-    errors: [str]
-    completed: i32
+    name: str,
+    workers: i32,
+    tasks: [str],
+    results: [str],
+    errors: [str],
+    completed: i32,
     total: i32
 }
 
 // ==================== EmbeddingCache 구조 ====================
 
 struct EmbeddingCache {
-    keys: [str]
-    vectors: [[f64]]
-    max_size: i32
-    hit_count: i32
-    miss_count: i32
+    keys: [str],
+    vectors: [[i32]],
+    max_size: i32,
+    hit_count: i32,
+    miss_count: i32,
     current_size: i32
 }
 
 // ==================== VectorIndex 구조 ====================
 
 struct VectorIndex {
-    vectors: [[f64]]
-    ids: [str]
-    dimension: i32
-    index_type: str
+    vectors: [[i32]],
+    ids: [str],
+    dimension: i32,
+    index_type: str,
     size: i32
 }
 
@@ -71,10 +71,10 @@ fn worker_pool_process(pool: WorkerPool) -> WorkerPool {
     while i < length(pool.tasks) {
         var task = pool.tasks[i]
 
-        ;; 작업 실행 (흉내)
+        // 작업 실행 (흉내)
         var result = "processed: " + task
 
-        ;; 성공 판정
+        // 성공 판정
         if length(result) > 0 {
             pool.results.push(result)
             successful = successful + 1
@@ -135,7 +135,7 @@ fn cache_get(cache: EmbeddingCache, text: str) -> str {
     var found: bool = false
     var result_idx: i32 = -1
 
-    ;; 선형 탐색으로 키 찾기
+    // 선형 탐색으로 키 찾기
     while i < length(cache.keys) {
         if cache.keys[i] == text {
             found = true
@@ -153,14 +153,14 @@ fn cache_get(cache: EmbeddingCache, text: str) -> str {
     }
 }
 
-fn cache_put(cache: EmbeddingCache, text: str, vector: [f64]) -> EmbeddingCache {
-    ;; 캐시 크기 확인
+fn cache_put(cache: EmbeddingCache, text: str, vector: [i32]) -> EmbeddingCache {
+    // 캐시 크기 확인
     if cache.current_size < cache.max_size {
         cache.keys.push(text)
         cache.vectors.push(vector)
         cache.current_size = cache.current_size + 1
     } else {
-        ;; LRU: 첫 번째 항목 제거하고 새 항목 추가 (간단한 FIFO)
+        // LRU: 첫 번째 항목 제거하고 새 항목 추가 (간단한 FIFO)
         var i: i32 = 0
         var new_keys: [str] = []
         while i < length(cache.keys) - 1 {
@@ -171,7 +171,7 @@ fn cache_put(cache: EmbeddingCache, text: str, vector: [f64]) -> EmbeddingCache 
         cache.keys = new_keys
 
         var j: i32 = 0
-        var new_vectors: [[f64]] = []
+        var new_vectors: [[i32]] = []
         while j < length(cache.vectors) - 1 {
             new_vectors.push(cache.vectors[j + 1])
             j = j + 1
@@ -185,9 +185,9 @@ fn cache_put(cache: EmbeddingCache, text: str, vector: [f64]) -> EmbeddingCache 
 
 fn cache_stats(cache: EmbeddingCache) -> str {
     var total: i32 = cache.hit_count + cache.miss_count
-    var hit_ratio: f64 = 0.0
+    var hit_ratio: i32 = 0
     if total > 0 {
-        hit_ratio = f64(cache.hit_count) / f64(total)
+        hit_ratio = i32(cache.hit_count) / i32(total)
     }
 
     var s: str = ""
@@ -220,7 +220,7 @@ fn vector_index_new(dimension: i32, index_type: str) -> VectorIndex {
     }
 }
 
-fn index_add(idx: VectorIndex, id: str, vector: [f64]) -> VectorIndex {
+fn index_add(idx: VectorIndex, id: str, vector: [i32]) -> VectorIndex {
     if length(vector) == idx.dimension {
         idx.ids.push(id)
         idx.vectors.push(vector)
@@ -229,23 +229,23 @@ fn index_add(idx: VectorIndex, id: str, vector: [f64]) -> VectorIndex {
     idx
 }
 
-fn index_search(idx: VectorIndex, query: [f64], top_k: i32) -> [str] {
+fn index_search(idx: VectorIndex, query: [i32], top_k: i32) -> [str] {
     var results: [str] = []
-    var scores: [f64] = []
+    var scores: [i32] = []
     var i: i32 = 0
 
-    ;; 각 벡터에 대해 유사도 계산
+    // 각 벡터에 대해 유사도 계산
     while i < idx.size {
         var similarity = cosine_similarity(query, idx.vectors[i])
         scores.push(similarity)
         i = i + 1
     }
 
-    ;; 상위 K개 찾기 (간단한 O(n log k) 구현)
+    // 상위 K개 찾기 (간단한 O(n log k) 구현)
     var j: i32 = 0
     while j < top_k && j < idx.size {
         var max_idx: i32 = -1
-        var max_score: f64 = -2.0
+        var max_score: i32 = -2.0
 
         var k: i32 = 0
         while k < length(scores) {
@@ -267,14 +267,14 @@ fn index_search(idx: VectorIndex, query: [f64], top_k: i32) -> [str] {
     results
 }
 
-fn cosine_similarity(v1: [f64], v2: [f64]) -> f64 {
+fn cosine_similarity(v1: [i32], v2: [i32]) -> i32 {
     if length(v1) != length(v2) {
         return -1.0
     }
 
-    var dot_product: f64 = 0.0
-    var norm1: f64 = 0.0
-    var norm2: f64 = 0.0
+    var dot_product: i32 = 0
+    var norm1: i32 = 0
+    var norm2: i32 = 0
 
     var i: i32 = 0
     while i < length(v1) {
@@ -305,11 +305,11 @@ fn index_stats(idx: VectorIndex) -> str {
 
 // ==================== 테스트 ====================
 
-fn main() {
+fn main() -> void {
     println("=== v9 병렬 처리 & 캐시 & 인덱싱 테스트 ===")
     println("")
 
-    ;; WorkerPool 테스트
+    // WorkerPool 테스트
     println("1️⃣ WorkerPool 테스트")
     var pool = worker_pool_new("test_pool", 4)
     pool = worker_pool_add(pool, "task_1")
@@ -321,7 +321,7 @@ fn main() {
     println("처리 후: " + worker_pool_stats(pool))
     println("")
 
-    ;; 병렬 맵 테스트
+    // 병렬 맵 테스트
     println("2️⃣ 병렬 맵 테스트")
     var items: [str] = ["item_1", "item_2", "item_3"]
     var mapped = parallel_map(items, 2)
@@ -333,21 +333,21 @@ fn main() {
     }
     println("")
 
-    ;; EmbeddingCache 테스트
+    // EmbeddingCache 테스트
     println("3️⃣ EmbeddingCache 테스트")
     var cache = embedding_cache_new(3)
 
-    ;; 캐시에 벡터 추가
-    var v1: [f64] = [0.1, 0.2, 0.3]
-    var v2: [f64] = [0.4, 0.5, 0.6]
-    var v3: [f64] = [0.7, 0.8, 0.9]
+    // 캐시에 벡터 추가
+    var v1: [i32] = [0.1, 0.2, 0.3]
+    var v2: [i32] = [0.4, 0.5, 0.6]
+    var v3: [i32] = [0.7, 0.8, 0.9]
 
     cache = cache_put(cache, "text1", v1)
     cache = cache_put(cache, "text2", v2)
     cache = cache_put(cache, "text3", v3)
     println("3개 벡터 캐시 저장 완료")
 
-    ;; 캐시 조회
+    // 캐시 조회
     var lookup1 = cache_get(cache, "text1")
     var lookup2 = cache_get(cache, "text_unknown")
     println("캐시 조회:")
@@ -356,7 +356,7 @@ fn main() {
     println("통계: " + cache_stats(cache))
     println("")
 
-    ;; VectorIndex 테스트
+    // VectorIndex 테스트
     println("4️⃣ VectorIndex 테스트")
     var index = vector_index_new(3, "flat")
     index = index_add(index, "doc_1", v1)
@@ -364,8 +364,8 @@ fn main() {
     index = index_add(index, "doc_3", v3)
     println("3개 문서 인덱싱 완료")
 
-    ;; 벡터 검색
-    var query: [f64] = [0.1, 0.2, 0.3]
+    // 벡터 검색
+    var query: [i32] = [0.1, 0.2, 0.3]
     var search_results = index_search(index, query, 2)
     println("유사도 상위 2개:")
     var j: i32 = 0
@@ -378,3 +378,5 @@ fn main() {
 
     println("✅ 병렬 처리 & 캐시 & 인덱싱 로드 완료")
 }
+
+main()

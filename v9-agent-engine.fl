@@ -4,9 +4,9 @@
 // ==================== 도구 레지스트리 ====================
 
 struct ToolRegistry {
-    tool_names: [str]
-    tool_descriptions: [str]
-    result_templates: [str]
+    tool_names: [str],
+    tool_descriptions: [str],
+    result_templates: [str],
     size: i32
 }
 
@@ -92,19 +92,19 @@ fn registry_build_default() -> ToolRegistry {
 // ==================== AgentState ====================
 
 struct AgentTask {
-    id: str
-    description: str
-    tool_name: str
-    input: str
-    result: str
+    id: str,
+    description: str,
+    tool_name: str,
+    input: str,
+    result: str,
     status: str  // "pending", "executing", "done", "failed"
 }
 
 struct AgentState {
-    agent_id: str
-    tasks: [AgentTask]
-    current_task_idx: i32
-    status: str  // "idle", "running", "failed", "completed"
+    agent_id: str,
+    tasks: [AgentTask],
+    current_task_idx: i32,
+    status: str,
     reasoning: str
 }
 
@@ -186,7 +186,7 @@ fn agent_add_task(state: AgentState, desc: str, tool: str, input: str) -> AgentS
 
 // ==================== 메인 테스트 ====================
 
-fn main() {
+fn main() -> void {
     println("╔═════════════════════════════════════════╗")
     println("║  v9 에이전트 엔진 (동적 ToolRegistry)   ║")
     println("╚═════════════════════════════════════════╝")
@@ -227,3 +227,5 @@ fn main() {
 
     println("✅ 에이전트 엔진 완료!")
 }
+
+main()

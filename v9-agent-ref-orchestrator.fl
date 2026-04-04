@@ -4,19 +4,19 @@
 // ==================== 작업 그룹 ====================
 
 struct Task {
-    id: str
-    name: str
-    agent_type: str
-    input: str
-    output: str
-    status: str  // "pending", "running", "done", "failed"
+    id: str,
+    name: str,
+    agent_type: str,
+    input: str,
+    output: str,
+    status: str
 }
 
 struct TaskGroup {
-    group_id: str
-    tasks: [Task]
-    mode: str   // "sequential" | "parallel"
-    status: str // "pending", "running", "done", "failed"
+    group_id: str,
+    tasks: [Task],
+    mode: str,
+    status: str
 }
 
 fn task_group_new(group_id: str, mode: str) -> TaskGroup {
@@ -113,7 +113,7 @@ fn execute_parallel(group: TaskGroup) -> TaskGroup {
 // ==================== 오케스트레이션 계획 ====================
 
 struct OrchestrationPlan {
-    groups: [TaskGroup]
+    groups: [TaskGroup],
     order: [i32]  // 실행 순서
 }
 
@@ -227,7 +227,7 @@ fn run_complex_workflow() -> str {
 
 // ==================== 메인 ====================
 
-fn main() {
+fn main() -> void {
     println("╔═════════════════════════════════════════╗")
     println("║  v9 에이전트 오케스트레이터              ║")
     println("║  (병렬/순차 TaskGroup)                   ║")
@@ -249,3 +249,5 @@ fn main() {
 
     println("✅ 오케스트레이터 완료!")
 }
+
+main()
