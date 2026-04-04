@@ -1,0 +1,20 @@
+fn string_set_add(s: str, item: str) -> str {
+    if contains(s, "," + item + ",") {
+        s
+    } else {
+        s + "," + item + ","
+    }
+}
+
+fn string_set_has(s: str, item: str) -> bool {
+    contains(s, "," + item + ",")
+}
+
+var s = ""
+println("1. initial: '" + s + "'")
+
+s = string_set_add(s, "item1")
+println("2. after add item1: '" + s + "'")
+
+var has1 = string_set_has(s, "item1")
+println("3. has item1: " + str(has1))

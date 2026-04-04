@@ -1,0 +1,365 @@
+// FreeLang v9 AI 모델 제약 조건 관리
+// 토큰, 비용, 레이턴시 제약
+
+// ==================== 제약 조건 구조 ====================
+
+struct PromptConstraints {
+    max_tokens: i32
+    max_cost_usd: f64
+    max_latency_ms: i32
+    min_confidence: f64
+}
+
+struct CostEstimate {
+    input_tokens: i32
+    output_tokens: i32
+    total_tokens: i32
+    cost_usd: f64
+    model: str
+}
+
+struct LatencyBudget {
+    total_ms: i32
+    used_ms: i32
+    remaining_ms: i32
+    deadline_unix: i32
+}
+
+struct ConstraintViolation {
+    violated: bool
+    constraint_type: str
+    limit: str
+    actual: str
+    message: str
+}
+
+// ==================== PromptConstraints 함수 ====================
+
+fn constraints_new() -> PromptConstraints {
+    PromptConstraints {
+        max_tokens: 2000,
+        max_cost_usd: 10.0,
+        max_latency_ms: 30000,
+        min_confidence: 0.5
+    }
+}
+
+fn constraints_set_tokens(c: PromptConstraints, max_tokens: i32) -> PromptConstraints {
+    c.max_tokens = max_tokens
+    c
+}
+
+fn constraints_set_cost(c: PromptConstraints, max_cost: f64) -> PromptConstraints {
+    c.max_cost_usd = max_cost
+    c
+}
+
+fn constraints_set_latency(c: PromptConstraints, max_latency_ms: i32) -> PromptConstraints {
+    c.max_latency_ms = max_latency_ms
+    c
+}
+
+fn constraints_set_confidence(c: PromptConstraints, min_confidence: f64) -> PromptConstraints {
+    c.min_confidence = min_confidence
+    c
+}
+
+fn constraints_display(c: PromptConstraints) -> str {
+    var s: str = ""
+    s = s + "PromptConstraints { "
+    s = s + "max_tokens=" + str(c.max_tokens) + ", "
+    s = s + "max_cost=$" + str(c.max_cost_usd) + ", "
+    s = s + "max_latency=" + str(c.max_latency_ms) + "ms, "
+    s = s + "min_confidence=" + str(c.min_confidence) + " }"
+    s
+}
+
+// ==================== 모델별 가격 정보 ====================
+
+fn price_per_1k_input_tokens(model: str) -> f64 {
+    if model == "claude-opus-4-6" {
+        return 0.015
+    }
+    if model == "claude-sonnet-4-6" {
+        return 0.003
+    }
+    if model == "claude-haiku-4-5" {
+        return 0.00025
+    }
+    0.0
+}
+
+fn price_per_1k_output_tokens(model: str) -> f64 {
+    if model == "claude-opus-4-6" {
+        return 0.075
+    }
+    if model == "claude-sonnet-4-6" {
+        return 0.015
+    }
+    if model == "claude-haiku-4-5" {
+        return 0.00125
+    }
+    0.0
+}
+
+fn model_context_window(model: str) -> i32 {
+    if model == "claude-opus-4-6" {
+        return 200000
+    }
+    if model == "claude-sonnet-4-6" {
+        return 200000
+    }
+    if model == "claude-haiku-4-5" {
+        return 200000
+    }
+    4096
+}
+
+// ==================== 비용 추정 ====================
+
+fn estimate_cost(model: str, input_text: str, max_output_tokens: i32) -> CostEstimate {
+    ;; 간단한 토큰 카운팅: 4자 = 1토큰
+    var input_tokens: i32 = length(input_text) / 4
+    if input_tokens < 1 {
+        input_tokens = 1
+    }
+
+    var output_tokens: i32 = max_output_tokens
+    var total_tokens: i32 = input_tokens + output_tokens
+
+    ;; 비용 계산
+    var input_price = price_per_1k_input_tokens(model)
+    var output_price = price_per_1k_output_tokens(model)
+
+    var input_cost = f64(input_tokens) * input_price / 1000.0
+    var output_cost = f64(output_tokens) * output_price / 1000.0
+    var total_cost = input_cost + output_cost
+
+    CostEstimate {
+        input_tokens: input_tokens,
+        output_tokens: output_tokens,
+        total_tokens: total_tokens,
+        cost_usd: total_cost,
+        model: model
+    }
+}
+
+fn cost_estimate_display(ce: CostEstimate) -> str {
+    var s: str = ""
+    s = s + "CostEstimate(" + ce.model + ") { "
+    s = s + "input=" + str(ce.input_tokens) + "tok, "
+    s = s + "output=" + str(ce.output_tokens) + "tok, "
+    s = s + "cost=$" + str(ce.cost_usd) + " }"
+    s
+}
+
+// ==================== 토큰 버짓 체크 ====================
+
+fn check_token_budget(text: str, max_tokens: i32) -> bool {
+    var token_count: i32 = length(text) / 4
+    if token_count < 1 {
+        token_count = 1
+    }
+    token_count <= max_tokens
+}
+
+fn token_budget_status(text: str, max_tokens: i32) -> str {
+    var token_count: i32 = length(text) / 4
+    if token_count < 1 {
+        token_count = 1
+    }
+
+    var usage_percent = f64(token_count) * 100.0 / f64(max_tokens)
+    var s: str = ""
+    s = s + "TokenBudget: " + str(token_count) + "/" + str(max_tokens) + " ("
+    s = s + str(usage_percent) + "%)"
+    s
+}
+
+// ==================== 비용 버짓 체크 ====================
+
+fn check_cost_budget(estimate: CostEstimate, budget: f64) -> bool {
+    estimate.cost_usd <= budget
+}
+
+fn cost_budget_status(estimate: CostEstimate, budget: f64) -> str {
+    var usage_percent = estimate.cost_usd * 100.0 / budget
+    var s: str = ""
+    s = s + "CostBudget: $" + str(estimate.cost_usd) + "/$" + str(budget) + " ("
+    s = s + str(usage_percent) + "%)"
+    s
+}
+
+// ==================== 레이턴시 버짓 체크 ====================
+
+fn latency_budget_new(total_ms: i32) -> LatencyBudget {
+    LatencyBudget {
+        total_ms: total_ms,
+        used_ms: 0,
+        remaining_ms: total_ms,
+        deadline_unix: 0
+    }
+}
+
+fn latency_budget_add_usage(budget: LatencyBudget, used_ms: i32) -> LatencyBudget {
+    budget.used_ms = budget.used_ms + used_ms
+    budget.remaining_ms = budget.total_ms - budget.used_ms
+    if budget.remaining_ms < 0 {
+        budget.remaining_ms = 0
+    }
+    budget
+}
+
+fn check_latency_budget(budget: LatencyBudget) -> bool {
+    budget.remaining_ms > 0
+}
+
+fn latency_budget_status(budget: LatencyBudget) -> str {
+    var usage_percent = f64(budget.used_ms) * 100.0 / f64(budget.total_ms)
+    var s: str = ""
+    s = s + "LatencyBudget: " + str(budget.used_ms) + "/" + str(budget.total_ms) + "ms ("
+    s = s + str(usage_percent) + "%)"
+    s
+}
+
+// ==================== 통합 제약 검증 ====================
+
+struct ConstraintValidationResult {
+    all_passed: bool
+    token_passed: bool
+    cost_passed: bool
+    latency_passed: bool
+    confidence_passed: bool
+    violations: [str]
+}
+
+fn validate_constraints(
+    input_text: str,
+    model: str,
+    max_output_tokens: i32,
+    constraints: PromptConstraints,
+    latency_ms: i32
+) -> ConstraintValidationResult {
+    var result = ConstraintValidationResult {
+        all_passed: true,
+        token_passed: true,
+        cost_passed: true,
+        latency_passed: true,
+        confidence_passed: true,
+        violations: []
+    }
+
+    ;; 토큰 체크
+    result.token_passed = check_token_budget(input_text, constraints.max_tokens)
+    if !result.token_passed {
+        result.violations.push("Token limit exceeded: " + token_budget_status(input_text, constraints.max_tokens))
+    }
+
+    ;; 비용 체크
+    var cost_est = estimate_cost(model, input_text, max_output_tokens)
+    result.cost_passed = check_cost_budget(cost_est, constraints.max_cost_usd)
+    if !result.cost_passed {
+        result.violations.push("Cost limit exceeded: " + cost_budget_status(cost_est, constraints.max_cost_usd))
+    }
+
+    ;; 레이턴시 체크
+    result.latency_passed = latency_ms <= constraints.max_latency_ms
+    if !result.latency_passed {
+        result.violations.push("Latency limit exceeded: " + str(latency_ms) + "ms > " + str(constraints.max_latency_ms) + "ms")
+    }
+
+    ;; 신뢰도 체크 (더미)
+    result.confidence_passed = constraints.min_confidence <= 1.0
+
+    ;; 전체 결과
+    result.all_passed = result.token_passed && result.cost_passed && result.latency_passed && result.confidence_passed
+
+    result
+}
+
+fn validation_result_display(vr: ConstraintValidationResult) -> str {
+    var s: str = ""
+    if vr.all_passed {
+        s = "✅ All constraints passed"
+    } else {
+        s = "❌ Constraint violations: "
+        var i: i32 = 0
+        while i < length(vr.violations) {
+            s = s + vr.violations[i]
+            if i < length(vr.violations) - 1 {
+                s = s + ", "
+            }
+            i = i + 1
+        }
+    }
+    s
+}
+
+// ==================== 테스트 ====================
+
+fn main() {
+    println("=== v9 제약 조건 관리 테스트 ===")
+    println("")
+
+    ;; 제약 설정
+    println("1️⃣ 제약 조건 설정")
+    var constraints = constraints_new()
+    constraints = constraints_set_tokens(constraints, 1000)
+    constraints = constraints_set_cost(constraints, 0.50)
+    constraints = constraints_set_latency(constraints, 10000)
+    println(constraints_display(constraints))
+    println("")
+
+    ;; 모델별 가격
+    println("2️⃣ 모델별 가격 정보")
+    println("opus input: $" + str(price_per_1k_input_tokens("claude-opus-4-6")) + "/1k tokens")
+    println("sonnet input: $" + str(price_per_1k_input_tokens("claude-sonnet-4-6")) + "/1k tokens")
+    println("haiku input: $" + str(price_per_1k_input_tokens("claude-haiku-4-5")) + "/1k tokens")
+    println("")
+
+    ;; 비용 추정
+    println("3️⃣ 비용 추정")
+    var test_input = "This is a test prompt with some content to estimate tokens and cost for the API call."
+    var cost_opus = estimate_cost("claude-opus-4-6", test_input, 100)
+    var cost_haiku = estimate_cost("claude-haiku-4-5", test_input, 100)
+    println(cost_estimate_display(cost_opus))
+    println(cost_estimate_display(cost_haiku))
+    println("")
+
+    ;; 토큰 버짓
+    println("4️⃣ 토큰 버짓 체크")
+    println(token_budget_status(test_input, 1000))
+    var token_ok = check_token_budget(test_input, 1000)
+    println("통과: " + if token_ok "yes" else "no")
+    println("")
+
+    ;; 비용 버짓
+    println("5️⃣ 비용 버짓 체크")
+    println(cost_budget_status(cost_opus, 0.50))
+    var cost_ok = check_cost_budget(cost_opus, 0.50)
+    println("통과: " + if cost_ok "yes" else "no")
+    println("")
+
+    ;; 레이턴시 버짓
+    println("6️⃣ 레이턴시 버짓 체크")
+    var latency_budget = latency_budget_new(10000)
+    latency_budget = latency_budget_add_usage(latency_budget, 3000)
+    println(latency_budget_status(latency_budget))
+    var latency_ok = check_latency_budget(latency_budget)
+    println("통과: " + if latency_ok "yes" else "no")
+    println("")
+
+    ;; 통합 검증
+    println("7️⃣ 통합 제약 검증")
+    var validation = validate_constraints(
+        test_input,
+        "claude-haiku-4-5",
+        100,
+        constraints,
+        5000
+    )
+    println(validation_result_display(validation))
+    println("")
+
+    println("✅ 제약 조건 관리 로드 완료")
+}

@@ -5,7 +5,7 @@
 
 struct TestCase {
     name: str
-    passed: bool
+    passed: str
     message: str
 }
 
@@ -16,7 +16,7 @@ struct TestSuite {
     failed_count: i32
 }
 
-fn test_case_new(name: str, passed: bool, message: str) -> TestCase {
+fn test_case_new(name: str, passed: str, message: str) -> TestCase {
     TestCase {
         name: name,
         passed: passed,
@@ -36,7 +36,7 @@ fn test_suite_new(name: str) -> TestSuite {
 fn test_suite_add(suite: TestSuite, test: TestCase) -> TestSuite {
     suite.tests.push(test)
 
-    if test.passed {
+    if test.passed == "true" {
         suite.passed_count = suite.passed_count + 1
         println("  ✅ " + test.name)
     } else {
@@ -107,7 +107,7 @@ fn test_result_fields() -> TestSuite {
     // ok 필드: type_ok → true
     var t1 = test_case_new(
         "ok 필드: type_ok → true",
-        r_ok.ok == true,
+        str(r_ok.ok == true),
         "ok field should be true for type_ok"
     )
     suite = test_suite_add(suite, t1)
@@ -115,7 +115,7 @@ fn test_result_fields() -> TestSuite {
     // value 필드: type_ok → 입력값
     var t2 = test_case_new(
         "value 필드: 입력값 저장",
-        r_ok.value == "hello",
+        str(r_ok.value == "hello"),
         "value field should store input"
     )
     suite = test_suite_add(suite, t2)
@@ -123,7 +123,7 @@ fn test_result_fields() -> TestSuite {
     // error 필드: type_ok → 빈 문자열
     var t3 = test_case_new(
         "error 필드: type_ok → 빈 문자열",
-        r_ok.error == "",
+        str(r_ok.error == ""),
         "error field should be empty for ok"
     )
     suite = test_suite_add(suite, t3)
@@ -131,7 +131,7 @@ fn test_result_fields() -> TestSuite {
     // error_code 필드: type_ok → 빈 문자열
     var t4 = test_case_new(
         "error_code 필드: type_ok → 빈 문자열",
-        r_ok.error_code == "",
+        str(r_ok.error_code == ""),
         "error_code field should be empty for ok"
     )
     suite = test_suite_add(suite, t4)
@@ -142,7 +142,7 @@ fn test_result_fields() -> TestSuite {
     // ok 필드: type_err → false
     var t5 = test_case_new(
         "ok 필드: type_err → false",
-        r_err.ok == false,
+        str(r_err.ok == false),
         "ok field should be false for type_err"
     )
     suite = test_suite_add(suite, t5)
@@ -150,7 +150,7 @@ fn test_result_fields() -> TestSuite {
     // value 필드: type_err → 빈 문자열
     var t6 = test_case_new(
         "value 필드: type_err → 빈 문자열",
-        r_err.value == "",
+        str(r_err.value == ""),
         "value field should be empty for err"
     )
     suite = test_suite_add(suite, t6)
@@ -158,7 +158,7 @@ fn test_result_fields() -> TestSuite {
     // error 필드: type_err → 메시지
     var t7 = test_case_new(
         "error 필드: 에러 메시지 저장",
-        r_err.error == "API 실패",
+        str(r_err.error == "API 실패"),
         "error field should store message"
     )
     suite = test_suite_add(suite, t7)
@@ -166,7 +166,7 @@ fn test_result_fields() -> TestSuite {
     // error_code 필드: type_err → 코드
     var t8 = test_case_new(
         "error_code 필드: 에러 코드 저장",
-        r_err.error_code == "E_API_ERROR",
+        str(r_err.error_code == "E_API_ERROR"),
         "error_code field should store code"
     )
     suite = test_suite_add(suite, t8)
@@ -185,7 +185,7 @@ fn test_result_functions() -> TestSuite {
     // type_is_ok
     var t1 = test_case_new(
         "type_is_ok: 성공",
-        type_is_ok(r_ok),
+        str(type_is_ok(r_ok)),
         "type_is_ok should return true for ok"
     )
     suite = test_suite_add(suite, t1)
@@ -193,7 +193,7 @@ fn test_result_functions() -> TestSuite {
     // type_is_err
     var t2 = test_case_new(
         "type_is_err: 실패",
-        type_is_err(r_err),
+        str(type_is_err(r_err)),
         "type_is_err should return true for err"
     )
     suite = test_suite_add(suite, t2)
@@ -202,7 +202,7 @@ fn test_result_functions() -> TestSuite {
     var unwrapped_ok = type_unwrap_or(r_ok, "default")
     var t3 = test_case_new(
         "type_unwrap_or: 성공값 반환",
-        unwrapped_ok == "success",
+        str(unwrapped_ok == "success"),
         "type_unwrap_or should return value for ok"
     )
     suite = test_suite_add(suite, t3)
@@ -211,7 +211,7 @@ fn test_result_functions() -> TestSuite {
     var unwrapped_err = type_unwrap_or(r_err, "fallback")
     var t4 = test_case_new(
         "type_unwrap_or: 기본값 반환",
-        unwrapped_err == "fallback",
+        str(unwrapped_err == "fallback"),
         "type_unwrap_or should return default for err"
     )
     suite = test_suite_add(suite, t4)
@@ -229,7 +229,7 @@ fn test_result_validation() -> TestSuite {
     var validated = validate_not_empty_result(ok_result, "result")
     var t1 = test_case_new(
         "validate_not_empty: 비어있지 않으면 통과",
-        validated.ok,
+        str(validated.ok),
         "non-empty result should pass validation"
     )
     suite = test_suite_add(suite, t1)
@@ -239,7 +239,7 @@ fn test_result_validation() -> TestSuite {
     var empty_validated = validate_not_empty_result(empty_result, "result")
     var t2 = test_case_new(
         "validate_not_empty: 빈 값이면 에러",
-        !empty_validated.ok,
+        str(!empty_validated.ok),
         "empty value should fail validation"
     )
     suite = test_suite_add(suite, t2)
@@ -249,7 +249,7 @@ fn test_result_validation() -> TestSuite {
     var pos_validated = validate_positive_result(pos_result, "count")
     var t3 = test_case_new(
         "validate_positive: 양수면 통과",
-        pos_validated.ok,
+        str(pos_validated.ok),
         "positive number should pass validation"
     )
     suite = test_suite_add(suite, t3)
@@ -259,7 +259,7 @@ fn test_result_validation() -> TestSuite {
     var neg_validated = validate_positive_result(neg_result, "count")
     var t4 = test_case_new(
         "validate_positive: 음수면 에러",
-        !neg_validated.ok,
+        str(!neg_validated.ok),
         "negative number should fail validation"
     )
     suite = test_suite_add(suite, t4)
@@ -269,7 +269,7 @@ fn test_result_validation() -> TestSuite {
     var range_validated = validate_range_result(in_range, "score", "0", "100")
     var t5 = test_case_new(
         "validate_range: 범위 내 통과",
-        range_validated.ok,
+        str(range_validated.ok),
         "value in range should pass"
     )
     suite = test_suite_add(suite, t5)
@@ -279,7 +279,7 @@ fn test_result_validation() -> TestSuite {
     var out_validated = validate_range_result(out_range, "score", "0", "100")
     var t6 = test_case_new(
         "validate_range: 범위 외 실패",
-        !out_validated.ok,
+        str(!out_validated.ok),
         "value out of range should fail"
     )
     suite = test_suite_add(suite, t6)
@@ -296,7 +296,7 @@ fn test_logger_basic() -> TestSuite {
     var logger = logger_new("INFO")
     var t1 = test_case_new(
         "Logger 생성: 초기 크기=0",
-        logger_count(logger) == 0,
+        str(logger_count(logger) == 0),
         "new logger should have count 0"
     )
     suite = test_suite_add(suite, t1)
@@ -305,7 +305,7 @@ fn test_logger_basic() -> TestSuite {
     logger = logger_log(logger, "Test message 1")
     var t2 = test_case_new(
         "로그 추가: 크기 증가",
-        logger_count(logger) == 1,
+        str(logger_count(logger) == 1),
         "logger count should be 1 after logging"
     )
     suite = test_suite_add(suite, t2)
@@ -315,7 +315,7 @@ fn test_logger_basic() -> TestSuite {
     logger = logger_log(logger, "Test message 3")
     var t3 = test_case_new(
         "다중 로그: 크기",
-        logger_count(logger) == 3,
+        str(logger_count(logger) == 3),
         "logger count should be 3 after 3 logs"
     )
     suite = test_suite_add(suite, t3)

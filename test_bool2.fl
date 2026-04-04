@@ -1,0 +1,12 @@
+fn is_true(value: bool) -> str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+fn main() -> str {
+    var result = is_true(true)
+    result
+}

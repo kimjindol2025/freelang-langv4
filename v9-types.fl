@@ -4,9 +4,9 @@
 // ==================== Result 타입 ====================
 
 struct Result {
-    ok: bool
-    value: str
-    error: str
+    ok: bool,
+    value: str,
+    error: str,
     error_code: str
 }
 
@@ -77,13 +77,13 @@ fn is_eval_error(s: str) -> bool {
     if length(s) < 6 {
         return false
     }
-    substring(s, 0, 6) == "error:"
+    slice(s, 0, 6) == "error:"
 }
 
 fn result_from_eval(eval_result: str) -> Result {
     // 인터프리터 반환값 → Result 변환
     if is_eval_error(eval_result) {
-        var err_msg = substring(eval_result, 6, length(eval_result))
+        var err_msg = slice(eval_result, 6, length(eval_result))
         type_err(err_msg, error_code_validation())
     } else {
         type_ok(eval_result)
@@ -101,7 +101,7 @@ fn type_unwrap_or_else(r: Result) -> str {
 
 // ==================== 상태 상수 함수 (enum 대체) ====================
 
-;; 트랜잭션 상태
+// 트랜잭션 상태
 fn status_pending() -> str {
     "pending"
 }
@@ -118,7 +118,7 @@ fn status_rolledback() -> str {
     "rolledback"
 }
 
-;; 실행 상태
+// 실행 상태
 fn status_success() -> str {
     "success"
 }
@@ -135,7 +135,7 @@ fn status_retrying() -> str {
     "retrying"
 }
 
-;; 도구 상태
+// 도구 상태
 fn status_available() -> str {
     "available"
 }
@@ -220,23 +220,23 @@ fn model_haiku() -> str {
 
 // ==================== 테스트 ====================
 
-fn main() {
+fn main() -> void {
     println("=== v9 타입 시스템 테스트 ===")
     println("")
 
-    ;; Result OK 테스트
+    // Result OK 테스트
     var ok_result = type_ok("success_value")
     println("OK Result: " + type_unwrap(ok_result))
-    println("is_ok: " + if type_is_ok(ok_result) "true" else "false")
+    println("is_ok: " + if type_is_ok(ok_result) { "true" } else { "false" })
     println("")
 
-    ;; Result Error 테스트
+    // Result Error 테스트
     var err_result = type_err("API 실패", error_code_api_error())
     println("Error Result: " + type_unwrap(err_result))
-    println("is_err: " + if type_is_err(err_result) "true" else "false")
+    println("is_err: " + if type_is_err(err_result) { "true" } else { "false" })
     println("")
 
-    ;; 상태 상수 테스트
+    // 상태 상수 테스트
     println("상태 상수:")
     println("  pending: " + status_pending())
     println("  committed: " + status_committed())
@@ -244,7 +244,7 @@ fn main() {
     println("  success: " + status_success())
     println("")
 
-    ;; 블록 타입 상수 테스트
+    // 블록 타입 상수 테스트
     println("블록 타입:")
     println("  INTENT: " + block_intent())
     println("  FUNC: " + block_func())
@@ -253,17 +253,19 @@ fn main() {
     println("  AGENT: " + block_agent())
     println("")
 
-    ;; 모델 상수 테스트
+    // 모델 상수 테스트
     println("모델:")
     println("  opus: " + model_opus())
     println("  sonnet: " + model_sonnet())
     println("  haiku: " + model_haiku())
     println("")
 
-    ;; unwrap_or 테스트
+    // unwrap_or 테스트
     var fallback = type_unwrap_or(err_result, "default_value")
     println("unwrap_or: " + fallback)
     println("")
 
     println("✅ v9 타입 시스템 로드 완료")
 }
+
+main()

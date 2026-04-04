@@ -1,0 +1,11 @@
+var s = "|"
+println("initial: " + s)
+
+s = s + "item1|"
+println("after add item1: " + s)
+
+var has_item1 = contains(s, "|item1|")
+println("contains(s, '|item1|'): " + str(has_item1))
+
+var has_item1_b = contains(s, "item1")
+println("contains(s, 'item1'): " + str(has_item1_b))

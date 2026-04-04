@@ -4,15 +4,15 @@
 // ==================== 검증 프레임워크 ====================
 
 struct ValidationTest {
-    name: str
-    status: str  ;; "pass", "fail"
+    name: str,
+    status: str,
     message: str
 }
 
 struct ValidationReport {
-    library_name: str
-    tests: [ValidationTest]
-    passed: i32
+    library_name: str,
+    tests: [ValidationTest],
+    passed: i32,
     failed: i32
 }
 
@@ -39,7 +39,7 @@ fn validation_report_add_test(report: ValidationReport, test: ValidationTest) ->
     report
 }
 
-fn validation_report_print(report: ValidationReport) {
+fn validation_report_print(report: ValidationReport) -> void {
     var total = report.passed + report.failed
 
     println("╔════════════════════════════════════════════════╗")
@@ -56,7 +56,7 @@ fn validation_report_print(report: ValidationReport) {
 fn validate_ai_library() -> ValidationReport {
     var report = validation_report_new("Library 1: AI/LLM")
 
-    ;; Test 1: Result type_ok 검증
+    // Test 1: Result type_ok 검증
     var r_ok = type_ok("test_value")
     var test1_pass = type_is_ok(r_ok)
     var test1 = ValidationTest {
@@ -66,7 +66,7 @@ fn validate_ai_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test1)
 
-    ;; Test 2: Result type_is_ok 검증
+    // Test 2: Result type_is_ok 검증
     var r_err = type_err("error message", "E_TEST")
     var test2_pass = !type_is_ok(r_err)
     var test2 = ValidationTest {
@@ -76,7 +76,7 @@ fn validate_ai_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test2)
 
-    ;; Test 3: Result field access - value
+    // Test 3: Result field access - value
     var test3_pass = r_ok.value == "test_value"
     var test3 = ValidationTest {
         name: "Result value field access",
@@ -85,7 +85,7 @@ fn validate_ai_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test3)
 
-    ;; Test 4: Result field access - error_code
+    // Test 4: Result field access - error_code
     var test4_pass = r_err.error_code == "E_TEST"
     var test4 = ValidationTest {
         name: "Result error_code field access",
@@ -94,7 +94,7 @@ fn validate_ai_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test4)
 
-    ;; Test 5: Result type_unwrap_or
+    // Test 5: Result type_unwrap_or
     var unwrapped = type_unwrap_or(r_err, "default")
     var test5_pass = unwrapped == "default"
     var test5 = ValidationTest {
@@ -112,7 +112,7 @@ fn validate_ai_library() -> ValidationReport {
 fn validate_data_library() -> ValidationReport {
     var report = validation_report_new("Library 2: Data Processing")
 
-    ;; Test 1: CSV 파싱
+    // Test 1: CSV 파싱
     var test1 = ValidationTest {
         name: "CSV parsing",
         status: "pass",
@@ -120,7 +120,7 @@ fn validate_data_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test1)
 
-    ;; Test 2: CSV 직렬화
+    // Test 2: CSV 직렬화
     var test2 = ValidationTest {
         name: "CSV stringification",
         status: "pass",
@@ -128,7 +128,7 @@ fn validate_data_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test2)
 
-    ;; Test 3: CSV 필터링
+    // Test 3: CSV 필터링
     var test3 = ValidationTest {
         name: "CSV filtering",
         status: "pass",
@@ -136,7 +136,7 @@ fn validate_data_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test3)
 
-    ;; Test 4: 컬럼 선택
+    // Test 4: 컬럼 선택
     var test4 = ValidationTest {
         name: "Column selection",
         status: "pass",
@@ -144,7 +144,7 @@ fn validate_data_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test4)
 
-    ;; Test 5: JSON 처리
+    // Test 5: JSON 처리
     var test5 = ValidationTest {
         name: "JSON handling",
         status: "pass",
@@ -160,7 +160,7 @@ fn validate_data_library() -> ValidationReport {
 fn validate_memory_library() -> ValidationReport {
     var report = validation_report_new("Library 3: Memory & Vectors")
 
-    ;; Test 1: 임베딩 저장소
+    // Test 1: 임베딩 저장소
     var test1 = ValidationTest {
         name: "Embedding store creation",
         status: "pass",
@@ -168,7 +168,7 @@ fn validate_memory_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test1)
 
-    ;; Test 2: 임베딩 추가
+    // Test 2: 임베딩 추가
     var test2 = ValidationTest {
         name: "Adding embeddings",
         status: "pass",
@@ -176,7 +176,7 @@ fn validate_memory_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test2)
 
-    ;; Test 3: 의미론적 검색
+    // Test 3: 의미론적 검색
     var test3 = ValidationTest {
         name: "Semantic search",
         status: "pass",
@@ -184,7 +184,7 @@ fn validate_memory_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test3)
 
-    ;; Test 4: 컨텍스트 윈도우
+    // Test 4: 컨텍스트 윈도우
     var test4 = ValidationTest {
         name: "Context window management",
         status: "pass",
@@ -192,7 +192,7 @@ fn validate_memory_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test4)
 
-    ;; Test 5: 메모리 풀
+    // Test 5: 메모리 풀
     var test5 = ValidationTest {
         name: "Memory pool FIFO",
         status: "pass",
@@ -208,7 +208,7 @@ fn validate_memory_library() -> ValidationReport {
 fn validate_async_library() -> ValidationReport {
     var report = validation_report_new("Library 4: Async & Transactions")
 
-    ;; Test 1: ErrorPolicy 생성
+    // Test 1: ErrorPolicy 생성
     var policy = error_policy_new()
     var test1_pass = policy.max_retries == 0
     var test1 = ValidationTest {
@@ -218,7 +218,7 @@ fn validate_async_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test1)
 
-    ;; Test 2: 재시도 정책 설정
+    // Test 2: 재시도 정책 설정
     policy = error_policy_with_retry(policy, 3, 500)
     var test2_pass = policy.max_retries == 3
     var test2 = ValidationTest {
@@ -228,7 +228,7 @@ fn validate_async_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test2)
 
-    ;; Test 3: Backoff 설정
+    // Test 3: Backoff 설정
     policy = error_policy_with_backoff(policy, 2.0)
     var test3_pass = policy.backoff_factor == 2.0
     var test3 = ValidationTest {
@@ -238,7 +238,7 @@ fn validate_async_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test3)
 
-    ;; Test 4: Timeout 설정
+    // Test 4: Timeout 설정
     policy = error_policy_with_timeout(policy, 5000)
     var test4_pass = policy.timeout_ms == 5000
     var test4 = ValidationTest {
@@ -248,7 +248,7 @@ fn validate_async_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test4)
 
-    ;; Test 5: Fallback 설정
+    // Test 5: Fallback 설정
     policy = error_policy_with_fallback(policy, "default_value")
     var test5_pass = policy.has_fallback
     var test5 = ValidationTest {
@@ -266,7 +266,7 @@ fn validate_async_library() -> ValidationReport {
 fn validate_tools_library() -> ValidationReport {
     var report = validation_report_new("Library 5: Tool System")
 
-    ;; Test 1: 도구 레지스트리
+    // Test 1: 도구 레지스트리
     var test1 = ValidationTest {
         name: "Tool registry creation",
         status: "pass",
@@ -274,7 +274,7 @@ fn validate_tools_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test1)
 
-    ;; Test 2: 도구 등록
+    // Test 2: 도구 등록
     var test2 = ValidationTest {
         name: "Tool registration",
         status: "pass",
@@ -282,7 +282,7 @@ fn validate_tools_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test2)
 
-    ;; Test 3: 도구 실행
+    // Test 3: 도구 실행
     var test3 = ValidationTest {
         name: "Tool execution",
         status: "pass",
@@ -290,7 +290,7 @@ fn validate_tools_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test3)
 
-    ;; Test 4: 도구 체인
+    // Test 4: 도구 체인
     var test4 = ValidationTest {
         name: "Tool chaining",
         status: "pass",
@@ -298,7 +298,7 @@ fn validate_tools_library() -> ValidationReport {
     }
     report = validation_report_add_test(report, test4)
 
-    ;; Test 5: 도구 검증
+    // Test 5: 도구 검증
     var test5 = ValidationTest {
         name: "Tool validation",
         status: "pass",
@@ -311,13 +311,13 @@ fn validate_tools_library() -> ValidationReport {
 
 // ==================== 메인 검증 ====================
 
-fn main() {
+fn main() -> void {
     println("╔════════════════════════════════════════════════╗")
     println("║  FreeLang v9 - 5개 필수 라이브러리 검증       ║")
     println("╚════════════════════════════════════════════════╝")
     println("")
 
-    ;; 각 라이브러리 검증
+    // 각 라이브러리 검증
     var report1 = validate_ai_library()
     validation_report_print(report1)
 
@@ -333,7 +333,7 @@ fn main() {
     var report5 = validate_tools_library()
     validation_report_print(report5)
 
-    ;; 종합 결과
+    // 종합 결과
     var total_passed = report1.passed + report2.passed + report3.passed + report4.passed + report5.passed
     var total_failed = report1.failed + report2.failed + report3.failed + report4.failed + report5.failed
     var total_tests = total_passed + total_failed
@@ -350,3 +350,5 @@ fn main() {
     println("║ ✅ 모든 라이브러리 검증 완료!")
     println("╚════════════════════════════════════════════════╝")
 }
+
+main()

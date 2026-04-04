@@ -1,0 +1,10 @@
+struct TestCase {
+    name: str
+    passed: bool
+    message: str
+}
+
+fn main() -> str {
+    var t = TestCase { name: "test", passed: true, message: "ok" }
+    t.name
+}

@@ -1,0 +1,5 @@
+fn main() {
+  print("Hello FreeLang v4!")
+  let x = 42
+  print(x)
+}

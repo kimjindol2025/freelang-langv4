@@ -1,0 +1,169 @@
+// FreeLang v9 컬렉션 테스트 (v4 호환)
+// StringMap과 StringSet 구현 및 검증
+
+var test_passed: i32 = 0
+var test_failed: i32 = 0
+
+fn assert_true(name: str, value: bool) -> void {
+    if value {
+        println("  ✅ " + name)
+        test_passed = test_passed + 1
+    } else {
+        println("  ❌ " + name)
+        test_failed = test_failed + 1
+    }
+}
+
+// ==================== StringMap 구현 ====================
+
+fn string_map_new() -> str {
+    ""
+}
+
+fn string_map_set(m: str, key: str, val: str) -> str {
+    m + "," + key + "=" + val
+}
+
+fn string_map_get(m: str, key: str) -> str {
+    var result = ""
+    if contains(m, "," + key + "=") {
+        result = "found"
+    }
+    result
+}
+
+fn string_map_has(m: str, key: str) -> bool {
+    contains(m, "," + key + "=")
+}
+
+// ==================== StringSet 구현 ====================
+
+fn string_set_new() -> str {
+    ""
+}
+
+fn string_set_add(s: str, item: str) -> str {
+    var result = s
+    if !contains(s, "," + item + ",") {
+        result = s + "," + item + ","
+    }
+    result
+}
+
+fn string_set_has(s: str, item: str) -> bool {
+    contains(s, "," + item + ",")
+}
+
+// ==================== StringMap 테스트 ====================
+
+fn test_string_map() -> void {
+    println("")
+    println("🧪 테스트: StringMap")
+
+    var m = string_map_new()
+
+    // 초기 상태
+    assert_true("생성: 초기 상태", m == "")
+
+    // 추가
+    m = string_map_set(m, "key1", "value1")
+    assert_true("추가: 값 저장", string_map_has(m, "key1"))
+
+    // 존재 확인
+    assert_true("has: 존재하는 키", string_map_has(m, "key1"))
+
+    // 미존재 키
+    assert_true("has: 없는 키", !string_map_has(m, "nonexistent"))
+
+    // 여러 키 추가
+    m = string_map_set(m, "key2", "value2")
+    m = string_map_set(m, "key3", "value3")
+    assert_true("다중 키: key2 존재", string_map_has(m, "key2"))
+    assert_true("다중 키: key3 존재", string_map_has(m, "key3"))
+}
+
+// ==================== StringSet 테스트 ====================
+
+fn test_string_set() -> void {
+    println("")
+    println("🧪 테스트: StringSet")
+
+    var s = string_set_new()
+
+    // 초기 상태
+    assert_true("생성: 초기 상태", s == "")
+
+    // 추가
+    s = string_set_add(s, "item1")
+    assert_true("추가: 값 저장", string_set_has(s, "item1"))
+
+    // 존재 확인
+    assert_true("has: 존재하는 항목", string_set_has(s, "item1"))
+
+    // 중복 추가 (creatSize 불변)
+    var s_before = s
+    s = string_set_add(s, "item1")
+    assert_true("중복 추가: 크기 불변", s == s_before)
+
+    // 다른 항목 추가
+    s = string_set_add(s, "item2")
+    s = string_set_add(s, "item3")
+    assert_true("다중 항목: item2 존재", string_set_has(s, "item2"))
+    assert_true("다중 항목: item3 존재", string_set_has(s, "item3"))
+
+    // 미포함 확인
+    assert_true("없는 항목", !string_set_has(s, "item999"))
+}
+
+// ==================== 배열 테스트 ====================
+
+fn test_arrays() -> void {
+    println("")
+    println("🧪 테스트: 배열 기본 기능")
+
+    var arr: [str] = []
+    assert_true("배열 생성: 초기 길이", length(arr) == 0)
+
+    arr.push("hello")
+    assert_true("배열 push: 길이 1", length(arr) == 1)
+
+    arr.push("world")
+    assert_true("배열 push: 길이 2", length(arr) == 2)
+
+    assert_true("배열 접근: arr[0]", arr[0] == "hello")
+    assert_true("배열 접근: arr[1]", arr[1] == "world")
+
+    var nums: [i32] = []
+    nums.push(10)
+    nums.push(20)
+    nums.push(30)
+    assert_true("숫자 배열: 길이", length(nums) == 3)
+    assert_true("숫자 배열: 첫 원소", nums[0] == 10)
+}
+
+// ==================== 메인 ====================
+
+fn main() -> void {
+    println("╔═════════════════════════════════════════════════╗")
+    println("║  v9 컬렉션 테스트 (v4 호환)                     ║")
+    println("╚═════════════════════════════════════════════════╝")
+
+    test_string_map()
+    test_string_set()
+    test_arrays()
+
+    var total = test_passed + test_failed
+
+    println("")
+    println("═══════════════════════════════════════════════════")
+    println("전체: " + str(test_passed) + " / " + str(total) + " 통과")
+    println("═══════════════════════════════════════════════════")
+
+    if test_failed == 0 {
+        println("✅ v9 컬렉션 테스트 완료!")
+    } else {
+        println("⚠️  " + str(test_failed) + "개 테스트 실패")
+    }
+}
+
+main()

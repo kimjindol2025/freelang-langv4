@@ -1,10 +1,39 @@
 // FreeLang v9 인터프리터 (AST 실행)
 // v4로 구현
 
+// ==================== 유틸리티 ====================
+
+fn i32_parse(s: str) -> i32 {
+    // 문자열 정수 파싱
+    var result: i32 = 0
+    var i: i32 = 0
+    var is_negative = false
+
+    if length(s) > 0 && char_at(s, 0) == "-" {
+        is_negative = true
+        i = 1
+    }
+
+    while i < length(s) {
+        var ch = char_at(s, i)
+        var code = char_code(ch)
+        if code >= 48 && code <= 57 {
+            result = result * 10 + (code - 48)
+        }
+        i = i + 1
+    }
+
+    if is_negative {
+        result = result * -1
+    }
+
+    result
+}
+
 // ==================== 메모리/환경 ====================
 
 struct Environment {
-    var_names: [str]
+    var_names: [str],
     var_values: [str]
 }
 
@@ -65,7 +94,7 @@ fn is_number(s: str) -> bool {
     var has_dot = false
 
     while i < length(s) {
-        var ch = substring(s, i, i + 1)
+        var ch = char_at(s, i)
         var code = char_code(ch)
 
         if code >= 48 && code <= 57 {
@@ -88,8 +117,8 @@ fn is_number(s: str) -> bool {
 fn get_prefix(s: str) -> str {
     var i: i32 = 0
     while i < length(s) {
-        if substring(s, i, i + 1) == ":" {
-            return substring(s, 0, i)
+        if char_at(s, i) == ":" {
+            return slice(s, 0, i)
         }
         i = i + 1
     }
@@ -99,9 +128,9 @@ fn get_prefix(s: str) -> str {
 fn get_data(s: str) -> str {
     var i: i32 = 0
     while i < length(s) {
-        if substring(s, i, i + 1) == ":" {
+        if char_at(s, i) == ":" {
             if i + 1 < length(s) {
-                return substring(s, i + 1, length(s))
+                return slice(s, i + 1, length(s))
             }
         }
         i = i + 1
@@ -164,7 +193,7 @@ fn eval_sexpr(expr_data: str, env: Environment) -> str {
     var i: i32 = 0
 
     while i < length(expr_data) {
-        var ch = substring(expr_data, i, i + 1)
+        var ch = char_at(expr_data, i)
 
         if ch == "|" {
             parts.push(current)
@@ -223,8 +252,8 @@ fn eval_arith(op: str, args: [str], env: Environment) -> str {
         return "error:not_number"
     }
 
-    var a = i32(a_str)
-    var b = i32(b_str)
+    var a = i32_parse(a_str)
+    var b = i32_parse(b_str)
     var result: i32 = 0
 
     if op == "+" {
@@ -250,7 +279,7 @@ fn eval_compare(op: str, args: [str], env: Environment) -> str {
     var a_str = evaluate(args[1], env)
     var b_str = evaluate(args[2], env)
 
-    ;; eval 에러 전파
+    // eval 에러 전파
     if starts_with(a_str, "error:") {
         return a_str
     }
@@ -258,7 +287,7 @@ fn eval_compare(op: str, args: [str], env: Environment) -> str {
         return b_str
     }
 
-    ;; ==, != 는 문자열 직접 비교 허용
+    // ==, != 는 문자열 직접 비교 허용
     if op == "=" || op == "==" {
         return if a_str == b_str { "bool:true" } else { "bool:false" }
     }
@@ -266,7 +295,7 @@ fn eval_compare(op: str, args: [str], env: Environment) -> str {
         return if a_str != b_str { "bool:true" } else { "bool:false" }
     }
 
-    ;; <, >, <=, >= 는 숫자만 허용
+    // <, >, <=, >= 는 숫자만 허용
     if !is_number(a_str) {
         return "error:type:TypeError: expected number, got '" + a_str + "' in eval_compare " + op
     }
@@ -274,8 +303,8 @@ fn eval_compare(op: str, args: [str], env: Environment) -> str {
         return "error:type:TypeError: expected number, got '" + b_str + "' in eval_compare " + op
     }
 
-    var a = i32(a_str)
-    var b = i32(b_str)
+    var a = i32_parse(a_str)
+    var b = i32_parse(b_str)
     var result = false
 
     if op == "<" {
@@ -391,7 +420,7 @@ fn eval_block(block_data: str, env: Environment) -> str {
     var i: i32 = 0
 
     while i < length(block_data) {
-        var ch = substring(block_data, i, i + 1)
+        var ch = char_at(block_data, i)
 
         if ch == "|" {
             parts.push(current)
@@ -434,22 +463,6 @@ fn eval_block(block_data: str, env: Environment) -> str {
     "result:" + type_name
 }
 
-fn starts_with(s: str, prefix: str) -> bool {
-    if length(s) < length(prefix) {
-        return false
-    }
-
-    var i: i32 = 0
-    while i < length(prefix) {
-        if substring(s, i, i + 1) != substring(prefix, i, i + 1) {
-            return false
-        }
-        i = i + 1
-    }
-
-    true
-}
-
 fn eval_intent(block_type: str, fields: [str], env: Environment) -> str {
     // [INTENT name :key val :key val ...]
     println("[INTENT] Executing: " + block_type)
@@ -483,7 +496,7 @@ fn interpret(ast_nodes: [str]) -> str {
     while i < length(ast_nodes) {
         result = evaluate(ast_nodes[i], env)
 
-        ;; 에러 조기 종료
+        // 에러 조기 종료
         if starts_with(result, "error:") {
             println("[INTERPRET] Error at node " + str(i) + ": " + result)
             return result
@@ -506,7 +519,7 @@ fn interpret_with_trace(ast_nodes: [str]) -> str {
         result = evaluate(ast_nodes[i], env)
         node_count = i + 1
 
-        ;; 에러 발생 시 상세 정보 반환
+        // 에러 발생 시 상세 정보 반환
         if starts_with(result, "error:") {
             var error_msg = "[TRACE] Error at node " + str(i) + "/" + str(length(ast_nodes)) + ": " + result
             println(error_msg)
@@ -522,7 +535,7 @@ fn interpret_with_trace(ast_nodes: [str]) -> str {
 
 // ==================== 통합 테스트 ====================
 
-fn main() {
+fn main() -> void {
     println("=== FreeLang v9 인터프리터 (v4) ===")
     println("")
 
@@ -554,3 +567,5 @@ fn main() {
 
     println("✅ 인터프리터 완료!")
 }
+
+main()

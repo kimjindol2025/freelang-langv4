@@ -1,0 +1,136 @@
+// FreeLang v9 문자열 함수 테스트 (v4 호환 버전)
+
+var test_passed: i32 = 0
+var test_failed: i32 = 0
+
+fn assert_eq(name: str, actual: str, expected: str) -> void {
+    if actual == expected {
+        println("  ✅ " + name)
+        test_passed = test_passed + 1
+    } else {
+        println("  ❌ " + name + " (expected: " + expected + ", got: " + actual + ")")
+        test_failed = test_failed + 1
+    }
+}
+
+fn assert_true(name: str, value: bool) -> void {
+    if value {
+        println("  ✅ " + name)
+        test_passed = test_passed + 1
+    } else {
+        println("  ❌ " + name)
+        test_failed = test_failed + 1
+    }
+}
+
+fn test_string_basic() -> void {
+    println("")
+    println("🧪 테스트 그룹 1: 기본 문자열 함수")
+
+    // length() - 빈 문자열
+    assert_true("length: 빈 문자열", length("") == 0)
+
+    // length() - 일반 문자열
+    assert_true("length: 일반 문자열", length("hello") == 5)
+
+    // length() - 한글
+    assert_true("length: 한글 문자열", length("프리랑") == 3)
+
+    // char_code() - 'A'는 65
+    assert_true("char_code: 'A'는 65", char_code("A") == 65)
+
+    // char_code() - '0'는 48
+    assert_true("char_code: '0'는 48", char_code("0") == 48)
+
+    // char_code() - 공백은 32
+    assert_true("char_code: 공백은 32", char_code(" ") == 32)
+}
+
+fn test_string_search() -> void {
+    println("")
+    println("🧪 테스트 그룹 2: 문자열 검색")
+
+    // starts_with() - true 케이스
+    assert_true("starts_with: true 케이스", starts_with("error:timeout", "error:"))
+
+    // starts_with() - false 케이스
+    assert_true("starts_with: false 케이스", !starts_with("bool:true", "error:"))
+
+    // starts_with() - 정확한 매치
+    assert_true("starts_with: 정확한 매치", starts_with("hello", "hello"))
+
+    // contains
+    assert_true("contains: 포함됨", contains("hello world", "world"))
+
+    // contains - 미포함
+    assert_true("contains: 미포함", !contains("hello", "xyz"))
+}
+
+fn test_string_transform() -> void {
+    println("")
+    println("🧪 테스트 그룹 3: 문자열 변환")
+
+    // str(i32) - 정수
+    assert_eq("str(i32): 42", str(42), "42")
+
+    // str(i32) - 0
+    assert_eq("str(i32): 0", str(0), "0")
+
+    // str(bool) - true
+    assert_eq("str(bool): true", str(true), "true")
+
+    // str(bool) - false
+    assert_eq("str(bool): false", str(false), "false")
+
+    // to_upper
+    assert_eq("to_upper", to_upper("hello"), "HELLO")
+
+    // to_lower
+    assert_eq("to_lower", to_lower("HELLO"), "hello")
+
+    // trim
+    assert_eq("trim", trim("  hello  "), "hello")
+}
+
+fn test_string_compare() -> void {
+    println("")
+    println("🧪 테스트 그룹 4: 문자열 비교")
+
+    // 동등 비교
+    assert_true("비교: 같음", "hello" == "hello")
+
+    // 부등 비교
+    assert_true("비교: 다름", "hello" != "world")
+
+    // 빈 문자열
+    assert_true("비교: 빈 문자열", "" == "")
+
+    // 대소문자 구분
+    assert_true("비교: 대소문자 구분", "Hello" != "hello")
+}
+
+fn main() -> void {
+    println("╔═════════════════════════════════════════════════╗")
+    println("║  v9 문자열 함수 테스트 (v4 호환)                ║")
+    println("╚═════════════════════════════════════════════════╝")
+
+    test_string_basic()
+    test_string_search()
+    test_string_transform()
+    test_string_compare()
+
+    var total = test_passed + test_failed
+
+    println("")
+    println("═══════════════════════════════════════════════════")
+    println("전체: " + str(test_passed) + " / " + str(total) + " 통과")
+    println("═══════════════════════════════════════════════════")
+
+    if test_failed == 0 {
+        println("✅ v9 문자열 함수 테스트 완료!")
+    } else {
+        println("⚠️  " + str(test_failed) + "개 테스트 실패")
+    }
+}
+
+main()

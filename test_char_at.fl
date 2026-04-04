@@ -1,0 +1,5 @@
+var s = "hello"
+println("length: " + str(length(s)))
+println("char_at 0: " + char_at(s, 0))
+println("char_at 1: " + char_at(s, 1))
+println("char_at 4: " + char_at(s, 4))

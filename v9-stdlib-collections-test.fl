@@ -5,7 +5,7 @@
 
 struct TestCase {
     name: str
-    passed: bool
+    passed: str
     message: str
 }
 
@@ -16,7 +16,7 @@ struct TestSuite {
     failed_count: i32
 }
 
-fn test_case_new(name: str, passed: bool, message: str) -> TestCase {
+fn test_case_new(name: str, passed: str, message: str) -> TestCase {
     TestCase {
         name: name,
         passed: passed,
@@ -36,7 +36,7 @@ fn test_suite_new(name: str) -> TestSuite {
 fn test_suite_add(suite: TestSuite, test: TestCase) -> TestSuite {
     suite.tests.push(test)
 
-    if test.passed {
+    if test.passed == "true" {
         suite.passed_count = suite.passed_count + 1
         println("  ✅ " + test.name)
     } else {
@@ -222,7 +222,7 @@ fn test_string_map() -> TestSuite {
     var m = string_map_new()
     var t1 = test_case_new(
         "생성: 초기 크기=0",
-        m.size == 0,
+        str(m.size == 0),
         "new map should have size 0"
     )
     suite = test_suite_add(suite, t1)
@@ -231,7 +231,7 @@ fn test_string_map() -> TestSuite {
     m = string_map_set(m, "key1", "value1")
     var t2 = test_case_new(
         "추가: 크기 증가",
-        m.size == 1,
+        str(m.size == 1),
         "size should be 1 after set"
     )
     suite = test_suite_add(suite, t2)
@@ -240,7 +240,7 @@ fn test_string_map() -> TestSuite {
     var val = string_map_get(m, "key1")
     var t3 = test_case_new(
         "조회: 값 반환",
-        val == "value1",
+        str(val == "value1"),
         "get should return stored value"
     )
     suite = test_suite_add(suite, t3)
@@ -248,7 +248,7 @@ fn test_string_map() -> TestSuite {
     // 존재 확인
     var t4 = test_case_new(
         "has: 존재하는 키",
-        string_map_has(m, "key1"),
+        str(string_map_has(m, "key1")),
         "has should return true for existing key"
     )
     suite = test_suite_add(suite, t4)
@@ -256,7 +256,7 @@ fn test_string_map() -> TestSuite {
     // 미존재 키
     var t5 = test_case_new(
         "has: 없는 키",
-        !string_map_has(m, "nonexistent"),
+        str(!string_map_has(m, "nonexistent")),
         "has should return false for missing key"
     )
     suite = test_suite_add(suite, t5)
@@ -266,7 +266,7 @@ fn test_string_map() -> TestSuite {
     var updated_val = string_map_get(m, "key1")
     var t6 = test_case_new(
         "덮어쓰기: 값 업데이트",
-        updated_val == "updated",
+        str(updated_val == "updated"),
         "set should overwrite existing key"
     )
     suite = test_suite_add(suite, t6)
@@ -274,7 +274,7 @@ fn test_string_map() -> TestSuite {
     // 크기 불변 (덮어쓰기 후)
     var t7 = test_case_new(
         "덮어쓰기 후 크기 불변",
-        m.size == 1,
+        str(m.size == 1),
         "size should remain 1 after overwrite"
     )
     suite = test_suite_add(suite, t7)
@@ -284,7 +284,7 @@ fn test_string_map() -> TestSuite {
     m = string_map_set(m, "key3", "value3")
     var t8 = test_case_new(
         "다중 키: 크기",
-        m.size == 3,
+        str(m.size == 3),
         "size should be 3 with 3 keys"
     )
     suite = test_suite_add(suite, t8)
@@ -293,7 +293,7 @@ fn test_string_map() -> TestSuite {
     m = string_map_remove(m, "key2")
     var t9 = test_case_new(
         "제거: 크기 감소",
-        m.size == 2,
+        str(m.size == 2),
         "size should be 2 after removing key2"
     )
     suite = test_suite_add(suite, t9)
@@ -302,7 +302,7 @@ fn test_string_map() -> TestSuite {
     var removed_val = string_map_get(m, "key2")
     var t10 = test_case_new(
         "제거 후: 빈 문자열",
-        removed_val == "",
+        str(removed_val == ""),
         "get should return empty string for removed key"
     )
     suite = test_suite_add(suite, t10)
@@ -319,7 +319,7 @@ fn test_string_set() -> TestSuite {
     var s = string_set_new()
     var t1 = test_case_new(
         "생성: 초기 크기=0",
-        s.size == 0,
+        str(s.size == 0),
         "new set should have size 0"
     )
     suite = test_suite_add(suite, t1)
@@ -328,7 +328,7 @@ fn test_string_set() -> TestSuite {
     s = string_set_add(s, "item1")
     var t2 = test_case_new(
         "추가: 크기 증가",
-        s.size == 1,
+        str(s.size == 1),
         "size should be 1 after add"
     )
     suite = test_suite_add(suite, t2)
@@ -336,7 +336,7 @@ fn test_string_set() -> TestSuite {
     // 존재 확인
     var t3 = test_case_new(
         "has: 존재하는 항목",
-        string_set_has(s, "item1"),
+        str(string_set_has(s, "item1")),
         "has should return true for existing item"
     )
     suite = test_suite_add(suite, t3)
@@ -345,7 +345,7 @@ fn test_string_set() -> TestSuite {
     s = string_set_add(s, "item1")
     var t4 = test_case_new(
         "중복 추가: 크기 불변",
-        s.size == 1,
+        str(s.size == 1),
         "size should remain 1 for duplicate add"
     )
     suite = test_suite_add(suite, t4)
@@ -355,7 +355,7 @@ fn test_string_set() -> TestSuite {
     s = string_set_add(s, "item3")
     var t5 = test_case_new(
         "다중 항목: 크기",
-        s.size == 3,
+        str(s.size == 3),
         "size should be 3 with 3 items"
     )
     suite = test_suite_add(suite, t5)
@@ -364,7 +364,7 @@ fn test_string_set() -> TestSuite {
     s = string_set_remove(s, "item2")
     var t6 = test_case_new(
         "제거: 크기 감소",
-        s.size == 2,
+        str(s.size == 2),
         "size should be 2 after removing item2"
     )
     suite = test_suite_add(suite, t6)
@@ -372,7 +372,7 @@ fn test_string_set() -> TestSuite {
     // 제거 후 존재 확인
     var t7 = test_case_new(
         "제거 후: 없는 항목",
-        !string_set_has(s, "item2"),
+        str(!string_set_has(s, "item2")),
         "has should return false for removed item"
     )
     suite = test_suite_add(suite, t7)

@@ -1,0 +1,8 @@
+struct Test {
+    value: bool
+}
+
+fn main() {
+    var t = Test { value: true }
+    println(str(t.value))
+}

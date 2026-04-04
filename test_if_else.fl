@@ -1,0 +1,10 @@
+fn test_if(x: i32) -> str {
+    if x > 0 {
+        "positive"
+    } else {
+        "non-positive"
+    }
+}
+
+println(test_if(5))
+println(test_if(-5))

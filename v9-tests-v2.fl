@@ -1,0 +1,451 @@
+// FreeLang v9 개선 사항 통합 테스트
+// 타입 시스템 + 에러 처리 + 병렬 처리 + 제약 조건
+
+// ==================== 테스트 헬퍼 ====================
+
+struct TestCase {
+    name: str
+    passed: bool
+    message: str
+}
+
+struct TestSuite {
+    name: str
+    tests: [TestCase]
+    passed_count: i32
+    failed_count: i32
+}
+
+fn test_suite_new(name: str) -> TestSuite {
+    TestSuite {
+        name: name,
+        tests: [],
+        passed_count: 0,
+        failed_count: 0
+    }
+}
+
+fn test_case_new(name: str, passed: bool, message: str) -> TestCase {
+    TestCase {
+        name: name,
+        passed: passed,
+        message: message
+    }
+}
+
+fn test_suite_add(suite: TestSuite, test: TestCase) -> TestSuite {
+    suite.tests.push(test)
+    if test.passed {
+        suite.passed_count = suite.passed_count + 1
+    } else {
+        suite.failed_count = suite.failed_count + 1
+    }
+    suite
+}
+
+fn test_suite_print(suite: TestSuite) {
+    println("━━━ " + suite.name + " ━━━")
+    var i: i32 = 0
+    while i < length(suite.tests) {
+        var test = suite.tests[i]
+        var status = if test.passed "✅" else "❌"
+        println(status + " " + test.name)
+        if length(test.message) > 0 {
+            println("    " + test.message)
+        }
+        i = i + 1
+    }
+    println("결과: " + str(suite.passed_count) + "/" + str(suite.passed_count + suite.failed_count) + " 통과")
+    println("")
+}
+
+// ==================== 테스트 1: Result 타입 ====================
+
+fn test_result_type() -> TestSuite {
+    var suite = test_suite_new("Result 타입 시스템")
+
+    ;; Result OK 생성 및 검증
+    var ok_result = type_ok("success_value")
+    var t1 = test_case_new(
+        "type_ok 생성",
+        type_is_ok(ok_result),
+        "OK result should have ok=true"
+    )
+    suite = test_suite_add(suite, t1)
+
+    ;; Result Error 생성 및 검증
+    var err_result = type_err("API error", "E_API_ERROR")
+    var t2 = test_case_new(
+        "type_err 생성",
+        type_is_err(err_result),
+        "Error result should have ok=false"
+    )
+    suite = test_suite_add(suite, t2)
+
+    ;; unwrap 테스트
+    var unwrapped = type_unwrap(ok_result)
+    var t3 = test_case_new(
+        "type_unwrap OK",
+        unwrapped == "success_value",
+        "unwrap should return value"
+    )
+    suite = test_suite_add(suite, t3)
+
+    ;; unwrap_or 테스트
+    var fallback = type_unwrap_or(err_result, "default")
+    var t4 = test_case_new(
+        "type_unwrap_or Error",
+        fallback == "default",
+        "unwrap_or should return default on error"
+    )
+    suite = test_suite_add(suite, t4)
+
+    ;; 상태 상수 테스트
+    var t5 = test_case_new(
+        "상태 상수 함수",
+        status_pending() == "pending" && status_committed() == "committed",
+        "status constants should work"
+    )
+    suite = test_suite_add(suite, t5)
+
+    ;; 블록 타입 상수 테스트
+    var t6 = test_case_new(
+        "블록 타입 상수",
+        block_intent() == "INTENT" && block_agent() == "AGENT",
+        "block constants should work"
+    )
+    suite = test_suite_add(suite, t6)
+
+    suite
+}
+
+// ==================== 테스트 2: 에러 처리 정책 ====================
+
+fn test_error_policy() -> TestSuite {
+    var suite = test_suite_new("에러 처리 전략")
+
+    ;; ErrorPolicy 생성
+    var policy = error_policy_new()
+    var t1 = test_case_new(
+        "에러 정책 생성",
+        policy.max_retries == 0 && policy.timeout_ms == 30000,
+        "default policy should be created"
+    )
+    suite = test_suite_add(suite, t1)
+
+    ;; retry 설정
+    policy = error_policy_with_retry(policy, 3, 1000)
+    var t2 = test_case_new(
+        "retry 설정",
+        policy.max_retries == 3 && policy.retry_delay_ms == 1000,
+        "retry policy should be set"
+    )
+    suite = test_suite_add(suite, t2)
+
+    ;; fallback 설정
+    policy = error_policy_with_fallback(policy, "fallback_value")
+    var t3 = test_case_new(
+        "fallback 설정",
+        policy.has_fallback && policy.fallback_value == "fallback_value",
+        "fallback should be configured"
+    )
+    suite = test_suite_add(suite, t3)
+
+    ;; ErrorContext 생성
+    var ctx = error_context_new("test_operation")
+    var t4 = test_case_new(
+        "에러 컨텍스트 생성",
+        ctx.operation == "test_operation" && ctx.status == "pending",
+        "context should be initialized"
+    )
+    suite = test_suite_add(suite, t4)
+
+    ;; 에러 기록
+    ctx = error_context_record(ctx, "Connection timeout")
+    var t5 = test_case_new(
+        "에러 기록",
+        ctx.status == "error" && ctx.last_error == "Connection timeout",
+        "error should be recorded"
+    )
+    suite = test_suite_add(suite, t5)
+
+    ;; retry 판정
+    var should_retry_result = should_retry(ctx, policy)
+    var t6 = test_case_new(
+        "should_retry 판정",
+        should_retry_result,
+        "should_retry should return true when not exhausted"
+    )
+    suite = test_suite_add(suite, t6)
+
+    ;; backoff 계산
+    var delay_0 = get_retry_delay(policy, 0)
+    var delay_1 = get_retry_delay(policy, 1)
+    var t7 = test_case_new(
+        "exponential backoff",
+        delay_1 > delay_0,
+        "delay should increase exponentially"
+    )
+    suite = test_suite_add(suite, t7)
+
+    suite
+}
+
+// ==================== 테스트 3: 병렬 처리 ====================
+
+fn test_parallel_map() -> TestSuite {
+    var suite = test_suite_new("병렬 처리 & 맵")
+
+    ;; WorkerPool 생성
+    var pool = worker_pool_new("test_pool", 2)
+    var t1 = test_case_new(
+        "WorkerPool 생성",
+        pool.workers == 2 && pool.total == 0,
+        "pool should be initialized"
+    )
+    suite = test_suite_add(suite, t1)
+
+    ;; 작업 추가
+    pool = worker_pool_add(pool, "task_1")
+    pool = worker_pool_add(pool, "task_2")
+    var t2 = test_case_new(
+        "작업 추가",
+        pool.total == 2,
+        "tasks should be added to pool"
+    )
+    suite = test_suite_add(suite, t2)
+
+    ;; 처리
+    pool = worker_pool_process(pool)
+    var t3 = test_case_new(
+        "작업 처리",
+        pool.completed == 2,
+        "all tasks should be completed"
+    )
+    suite = test_suite_add(suite, t3)
+
+    ;; 결과 조회
+    var results = worker_pool_results(pool)
+    var t4 = test_case_new(
+        "결과 조회",
+        length(results) == 2,
+        "results should have 2 items"
+    )
+    suite = test_suite_add(suite, t4)
+
+    ;; 병렬 맵
+    var items: [str] = ["a", "b", "c"]
+    var mapped = parallel_map(items, 2)
+    var t5 = test_case_new(
+        "parallel_map",
+        length(mapped) == 3,
+        "parallel_map should process all items"
+    )
+    suite = test_suite_add(suite, t5)
+
+    suite
+}
+
+// ==================== 테스트 4: 임베딩 캐시 ====================
+
+fn test_embedding_cache() -> TestSuite {
+    var suite = test_suite_new("임베딩 캐시")
+
+    ;; 캐시 생성
+    var cache = embedding_cache_new(3)
+    var t1 = test_case_new(
+        "캐시 생성",
+        cache.max_size == 3 && cache.current_size == 0,
+        "cache should be initialized"
+    )
+    suite = test_suite_add(suite, t1)
+
+    ;; 벡터 저장
+    var v1: [f64] = [0.1, 0.2, 0.3]
+    cache = cache_put(cache, "text1", v1)
+    var t2 = test_case_new(
+        "벡터 저장",
+        cache.current_size == 1,
+        "vector should be added to cache"
+    )
+    suite = test_suite_add(suite, t2)
+
+    ;; 캐시 히트
+    var hit = cache_get(cache, "text1")
+    var t3 = test_case_new(
+        "캐시 히트",
+        cache.hit_count == 1,
+        "hit count should increase"
+    )
+    suite = test_suite_add(suite, t3)
+
+    ;; 캐시 미스
+    var miss = cache_get(cache, "unknown")
+    var t4 = test_case_new(
+        "캐시 미스",
+        cache.miss_count == 1,
+        "miss count should increase"
+    )
+    suite = test_suite_add(suite, t4)
+
+    suite
+}
+
+// ==================== 테스트 5: 벡터 인덱싱 ====================
+
+fn test_vector_index() -> TestSuite {
+    var suite = test_suite_new("벡터 인덱싱")
+
+    ;; 인덱스 생성
+    var idx = vector_index_new(3, "flat")
+    var t1 = test_case_new(
+        "인덱스 생성",
+        idx.dimension == 3 && idx.size == 0,
+        "index should be initialized"
+    )
+    suite = test_suite_add(suite, t1)
+
+    ;; 벡터 추가
+    var v1: [f64] = [0.1, 0.2, 0.3]
+    var v2: [f64] = [0.4, 0.5, 0.6]
+    idx = index_add(idx, "doc1", v1)
+    idx = index_add(idx, "doc2", v2)
+    var t2 = test_case_new(
+        "벡터 추가",
+        idx.size == 2,
+        "vectors should be added"
+    )
+    suite = test_suite_add(suite, t2)
+
+    ;; 코사인 유사도
+    var similarity = cosine_similarity(v1, v2)
+    var t3 = test_case_new(
+        "코사인 유사도",
+        similarity >= 0.0 && similarity <= 1.0,
+        "similarity should be in [0, 1]"
+    )
+    suite = test_suite_add(suite, t3)
+
+    ;; 검색
+    var results = index_search(idx, v1, 1)
+    var t4 = test_case_new(
+        "검색",
+        length(results) > 0,
+        "search should return results"
+    )
+    suite = test_suite_add(suite, t4)
+
+    suite
+}
+
+// ==================== 테스트 6: 제약 조건 ====================
+
+fn test_constraints() -> TestSuite {
+    var suite = test_suite_new("제약 조건 관리")
+
+    ;; 제약 생성
+    var c = constraints_new()
+    var t1 = test_case_new(
+        "제약 생성",
+        c.max_tokens == 2000 && c.max_cost_usd == 10.0,
+        "constraints should be initialized"
+    )
+    suite = test_suite_add(suite, t1)
+
+    ;; 제약 설정
+    c = constraints_set_tokens(c, 1000)
+    var t2 = test_case_new(
+        "토큰 제약 설정",
+        c.max_tokens == 1000,
+        "token limit should be set"
+    )
+    suite = test_suite_add(suite, t2)
+
+    ;; 비용 추정
+    var test_input = "This is a test"
+    var cost = estimate_cost("claude-haiku-4-5", test_input, 50)
+    var t3 = test_case_new(
+        "비용 추정",
+        cost.total_tokens > 0 && cost.cost_usd >= 0.0,
+        "cost should be estimated"
+    )
+    suite = test_suite_add(suite, t3)
+
+    ;; 토큰 체크
+    var token_ok = check_token_budget(test_input, 1000)
+    var t4 = test_case_new(
+        "토큰 체크",
+        token_ok,
+        "token check should pass"
+    )
+    suite = test_suite_add(suite, t4)
+
+    ;; 비용 체크
+    var cost_ok = check_cost_budget(cost, 1.0)
+    var t5 = test_case_new(
+        "비용 체크",
+        cost_ok,
+        "cost check should pass"
+    )
+    suite = test_suite_add(suite, t5)
+
+    ;; 레이턴시 버짓
+    var latency = latency_budget_new(10000)
+    latency = latency_budget_add_usage(latency, 3000)
+    var t6 = test_case_new(
+        "레이턴시 체크",
+        check_latency_budget(latency),
+        "latency check should pass"
+    )
+    suite = test_suite_add(suite, t6)
+
+    suite
+}
+
+// ==================== 메인 테스트 실행 ====================
+
+fn main() {
+    println("")
+    println("╔════════════════════════════════════════════════════════╗")
+    println("║  v9 FreeLang 개선 사항 통합 테스트                     ║")
+    println("╚════════════════════════════════════════════════════════╝")
+    println("")
+
+    var suite1 = test_result_type()
+    test_suite_print(suite1)
+
+    var suite2 = test_error_policy()
+    test_suite_print(suite2)
+
+    var suite3 = test_parallel_map()
+    test_suite_print(suite3)
+
+    var suite4 = test_embedding_cache()
+    test_suite_print(suite4)
+
+    var suite5 = test_vector_index()
+    test_suite_print(suite5)
+
+    var suite6 = test_constraints()
+    test_suite_print(suite6)
+
+    ;; 전체 결과
+    var total_passed = suite1.passed_count + suite2.passed_count + suite3.passed_count + suite4.passed_count + suite5.passed_count + suite6.passed_count
+    var total_count = total_passed + suite1.failed_count + suite2.failed_count + suite3.failed_count + suite4.failed_count + suite5.failed_count + suite6.failed_count
+
+    println("╔════════════════════════════════════════════════════════╗")
+    println("║  전체 테스트 결과                                       ║")
+    println("╚════════════════════════════════════════════════════════╝")
+    println("")
+    println("총: " + str(total_passed) + "/" + str(total_count) + " 통과")
+    println("")
+
+    if total_passed == total_count {
+        println("🎉 모든 테스트 통과! 🎉")
+    } else {
+        println("⚠️ " + str(total_count - total_passed) + "개 테스트 실패")
+    }
+
+    println("")
+    println("✅ v9 개선 사항 통합 테스트 완료")
+}
