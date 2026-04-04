@@ -1,0 +1,286 @@
+// FreeLang v9 Phase 6: 분산 처리
+// 클러스터 기반 분산 실행, 라운드로빈 태스크 스케줄링, 노드 장애 조치
+
+// ==================== 구조체 정의 ====================
+
+struct Node {
+    id: str,
+    addr: str,
+    status: str,
+    load: i32
+}
+
+struct Cluster {
+    name: str,
+    nodes: [Node],
+    leader_id: str,
+    mode: str
+}
+
+struct DistributedTask {
+    id: str,
+    name: str,
+    payload: str,
+    assigned_node: str,
+    status: str
+}
+
+struct TaskResult {
+    task_id: str,
+    node_id: str,
+    result: str,
+    latency_ms: i32
+}
+
+// ==================== 클러스터 관리 ====================
+
+fn cluster_new(name: str, mode: str) -> Cluster {
+    Cluster {
+        name: name,
+        nodes: [],
+        leader_id: "",
+        mode: mode
+    }
+}
+
+fn cluster_add_node(cluster: Cluster, node_id: str, addr: str) -> Cluster {
+    var node = Node {
+        id: node_id,
+        addr: addr,
+        status: "healthy",
+        load: 0
+    }
+    cluster.nodes.push(node)
+
+    if length(cluster.nodes) == 1 {
+        cluster.leader_id = node_id
+    }
+
+    cluster
+}
+
+fn cluster_get_node(cluster: Cluster, node_id: str) -> Node {
+    var i: i32 = 0
+    while i < length(cluster.nodes) {
+        if cluster.nodes[i].id == node_id {
+            return cluster.nodes[i]
+        }
+        i = i + 1
+    }
+
+    Node { id: "", addr: "", status: "unknown", load: 0 }
+}
+
+fn cluster_update_node_load(cluster: Cluster, node_id: str, load: i32) -> Cluster {
+    var i: i32 = 0
+    while i < length(cluster.nodes) {
+        if cluster.nodes[i].id == node_id {
+            cluster.nodes[i].load = load
+        }
+        i = i + 1
+    }
+    cluster
+}
+
+// ==================== 태스크 스케줄링 ====================
+
+fn cluster_dispatch(cluster: Cluster, task: DistributedTask, round_robin_idx: i32) -> DistributedTask {
+    if length(cluster.nodes) == 0 {
+        return task
+    }
+
+    // 라운드로빈으로 노드 선택
+    var node_idx = round_robin_idx % length(cluster.nodes)
+    var selected_node = cluster.nodes[node_idx]
+
+    task.assigned_node = selected_node.id
+    task.status = "dispatched"
+
+    println("[DISPATCH] Task " + task.id + " → Node " + selected_node.id + " (" + selected_node.addr + ")")
+
+    task
+}
+
+fn cluster_dispatch_balanced(cluster: Cluster, task: DistributedTask) -> DistributedTask {
+    if length(cluster.nodes) == 0 {
+        return task
+    }
+
+    // 최소 부하 노드 선택
+    var min_load: i32 = 999999
+    var best_node_idx: i32 = 0
+    var i: i32 = 0
+
+    while i < length(cluster.nodes) {
+        var node = cluster.nodes[i]
+        if node.status == "healthy" && node.load < min_load {
+            min_load = node.load
+            best_node_idx = i
+        }
+        i = i + 1
+    }
+
+    var selected_node = cluster.nodes[best_node_idx]
+    task.assigned_node = selected_node.id
+    task.status = "dispatched"
+
+    println("[BALANCED] Task " + task.id + " → Node " + selected_node.id + " (load=" + str(selected_node.load) + ")")
+
+    task
+}
+
+// ==================== 노드 헬스체크 ====================
+
+fn cluster_heartbeat(cluster: Cluster) -> Cluster {
+    var i: i32 = 0
+    while i < length(cluster.nodes) {
+        var node = cluster.nodes[i]
+
+        // 헬스체크 시뮬레이션 (실제로는 HTTP ping)
+        var health_check_result = "ok"
+
+        if health_check_result == "ok" {
+            node.status = "healthy"
+        } else {
+            node.status = "unhealthy"
+        }
+
+        println("[HEARTBEAT] Node " + node.id + " → " + node.status)
+
+        i = i + 1
+    }
+
+    cluster
+}
+
+// ==================== 장애 조치 (Failover) ====================
+
+fn cluster_failover(cluster: Cluster, failed_node_id: str) -> Cluster {
+    println("[FAILOVER] Node " + failed_node_id + " detected as unhealthy")
+
+    var i: i32 = 0
+    while i < length(cluster.nodes) {
+        if cluster.nodes[i].id == failed_node_id {
+            cluster.nodes[i].status = "dead"
+        }
+        i = i + 1
+    }
+
+    // 새로운 리더 선택 (첫 번째 healthy 노드)
+    i = 0
+    while i < length(cluster.nodes) {
+        if cluster.nodes[i].status == "healthy" {
+            cluster.leader_id = cluster.nodes[i].id
+            println("[FAILOVER] New leader elected: " + cluster.nodes[i].id)
+            return cluster
+        }
+        i = i + 1
+    }
+
+    cluster
+}
+
+// ==================== 결과 수집 ====================
+
+fn task_result_new(task_id: str, node_id: str, result: str) -> TaskResult {
+    TaskResult {
+        task_id: task_id,
+        node_id: node_id,
+        result: result,
+        latency_ms: 0
+    }
+}
+
+fn cluster_collect_results(results: [TaskResult]) -> str {
+    var summary = "=== Task Results ===\n"
+    var i: i32 = 0
+    var total_latency: i32 = 0
+
+    while i < length(results) {
+        var result = results[i]
+        summary = summary + "  Task " + result.task_id + ": " + result.result + " (" + str(result.latency_ms) + "ms)\n"
+        total_latency = total_latency + result.latency_ms
+        i = i + 1
+    }
+
+    if length(results) > 0 {
+        var avg_latency = total_latency / length(results)
+        summary = summary + "Average latency: " + str(avg_latency) + "ms\n"
+    }
+
+    summary
+}
+
+// ==================== 메인 ====================
+
+fn main() -> void {
+    println("╔════════════════════════════════════════════╗")
+    println("║  v9 Phase 6: 분산 처리 클러스터          ║")
+    println("╚════════════════════════════════════════════╝")
+    println("")
+
+    // 클러스터 생성
+    println("1️⃣ 클러스터 초기화")
+    var cluster = cluster_new("prod-cluster", "distributed")
+
+    cluster = cluster_add_node(cluster, "node-01", "192.168.1.10:8001")
+    cluster = cluster_add_node(cluster, "node-02", "192.168.1.11:8002")
+    cluster = cluster_add_node(cluster, "node-03", "192.168.1.12:8003")
+
+    println("  Cluster: " + cluster.name)
+    println("  Nodes: " + str(length(cluster.nodes)))
+    println("  Leader: " + cluster.leader_id)
+    println("")
+
+    // 태스크 생성 및 분배
+    println("2️⃣ 태스크 분배 (라운드로빈)")
+    var task1 = DistributedTask { id: "task-001", name: "compute", payload: "data_01", assigned_node: "", status: "pending" }
+    var task2 = DistributedTask { id: "task-002", name: "aggregate", payload: "data_02", assigned_node: "", status: "pending" }
+    var task3 = DistributedTask { id: "task-003", name: "analyze", payload: "data_03", assigned_node: "", status: "pending" }
+
+    task1 = cluster_dispatch(cluster, task1, 0)
+    task2 = cluster_dispatch(cluster, task2, 1)
+    task3 = cluster_dispatch(cluster, task3, 2)
+    println("")
+
+    // 로드 밸런싱
+    println("3️⃣ 로드 밸런싱 (최소 부하 노드 선택)")
+    cluster = cluster_update_node_load(cluster, "node-01", 15)
+    cluster = cluster_update_node_load(cluster, "node-02", 5)
+    cluster = cluster_update_node_load(cluster, "node-03", 10)
+
+    var task4 = DistributedTask { id: "task-004", name: "process", payload: "data_04", assigned_node: "", status: "pending" }
+    task4 = cluster_dispatch_balanced(cluster, task4)
+    println("")
+
+    // 헬스체크
+    println("4️⃣ 노드 헬스체크")
+    cluster = cluster_heartbeat(cluster)
+    println("")
+
+    // 장애 조치
+    println("5️⃣ 노드 장애 및 조치")
+    cluster = cluster_failover(cluster, "node-01")
+    println("")
+
+    // 결과 수집
+    println("6️⃣ 태스크 결과 수집")
+    var result1 = task_result_new("task-001", "node-01", "computed")
+    var result2 = task_result_new("task-002", "node-02", "aggregated")
+    var result3 = task_result_new("task-003", "node-03", "analyzed")
+    var results: [TaskResult] = []
+    results.push(result1)
+    results.push(result2)
+    results.push(result3)
+
+    result1.latency_ms = 150
+    result2.latency_ms = 120
+    result3.latency_ms = 180
+
+    var summary = cluster_collect_results(results)
+    println(summary)
+
+    println("✅ 분산 처리 클러스터 완료!")
+}
+
+main()

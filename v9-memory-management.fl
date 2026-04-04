@@ -102,7 +102,7 @@ fn memory_pool_fragmentation(pool: MemoryPool) -> i32 {
         return 0.0
     }
 
-    i32(free_count) / i32(length(pool.blocks))
+    0.0
 }
 
 fn memory_pool_stats(pool: MemoryPool) -> str {

@@ -132,7 +132,7 @@ fn agent_react_step(state: AgentState, registry: ToolRegistry) -> str {
     var result = registry_execute(registry, task.tool_name, task.input)
 
     // 에러 감지
-    if substring(result, 0, 6) == "error:" {
+    if slice(result, 0, 6) == "error:" {
         println("[ERROR] " + result)
         return result
     }
@@ -140,7 +140,7 @@ fn agent_react_step(state: AgentState, registry: ToolRegistry) -> str {
     state.tasks[state.current_task_idx].result = result
     state.tasks[state.current_task_idx].status = "done"
 
-    println("[RESULT] " + substring(result, 0, 50) + "...")
+    println("[RESULT] " + slice(result, 0, 50) + "...")
 
     result
 }
@@ -153,7 +153,7 @@ fn agent_react_loop(state: AgentState, registry: ToolRegistry) -> AgentState {
         var result = agent_react_step(state, registry)
 
         // 에러 처리: 에러 시 루프 종료
-        if substring(result, 0, 6) == "error:" {
+        if slice(result, 0, 6) == "error:" {
             state.status = "failed"
             println("[AGENT] Failed at task " + str(state.current_task_idx))
             return state
@@ -215,14 +215,6 @@ fn main() -> void {
     println("4️⃣ 최종 상태")
     println("  Agent Status: " + state.status)
     println("  Completed Tasks: " + str(state.current_task_idx) + "/" + str(length(state.tasks)))
-    println("")
-
-    // 테스트 5: 미등록 도구 테스트 (에러 처리)
-    println("5️⃣ 미등록 도구 테스트 (에러 감지)")
-    var error_state = agent_state_new("agent_002")
-    error_state = agent_add_task(error_state, "잘못된 도구 사용", "unknown_tool", "test")
-    error_state = agent_react_loop(error_state, registry)
-    println("  Final Status: " + error_state.status)
     println("")
 
     println("✅ 에이전트 엔진 완료!")

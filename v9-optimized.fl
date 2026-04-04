@@ -189,7 +189,7 @@ fn starts_with_opt(s: str, prefix: str) -> bool {
         return false
     }
 
-    substring(s, 0, length(prefix)) == prefix
+    slice(s, 0, length(prefix)) == prefix
 }
 
 // ==================== 루프 최적화 ====================

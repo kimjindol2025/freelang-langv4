@@ -47,7 +47,7 @@ fn memory_store_add(store: MemoryStore, id: str, content: str, metadata: [str]) 
     store.memories.push(mem)
     store.index.push(id)
 
-    println("  Content: " + substring(content, 0, 40) + "...")
+    println("  Content: " + slice(content, 0, 40) + "...")
     println("  Metadata: " + str(length(metadata)) + " items")
 
     store
@@ -86,7 +86,7 @@ fn contains(haystack: str, needle: str) -> bool {
     var nlen = length(needle)
 
     while i <= hlen - nlen {
-        if substring(haystack, i, i + nlen) == needle {
+        if slice(haystack, i, i + nlen) == needle {
             return true
         }
         i = i + 1
@@ -115,7 +115,7 @@ fn conversation_add_message(conv: Conversation, role: str, content: str) -> Conv
     var msg = role + ": " + content
     conv.messages.push(msg)
 
-    println("[CONV] " + role + " → " + substring(content, 0, 30) + "...")
+    println("[CONV] " + role + " → " + slice(content, 0, 30) + "...")
 
     conv
 }

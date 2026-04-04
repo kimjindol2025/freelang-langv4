@@ -1,5 +1,20 @@
 // FreeLang v9 병렬 처리 + 임베딩 캐시 + 벡터 인덱싱
 
+// ==================== 유틸리티 ====================
+
+fn i32_parse(s: str) -> i32 {
+    var result: i32 = 0
+    var i: i32 = 0
+    while i < length(s) {
+        var code = char_code(char_at(s, i))
+        if code >= 48 && code <= 57 {
+            result = result * 10 + (code - 48)
+        }
+        i = i + 1
+    }
+    result
+}
+
 // ==================== WorkerPool 구조 ====================
 
 struct WorkerPool {
@@ -185,17 +200,13 @@ fn cache_put(cache: EmbeddingCache, text: str, vector: [i32]) -> EmbeddingCache 
 
 fn cache_stats(cache: EmbeddingCache) -> str {
     var total: i32 = cache.hit_count + cache.miss_count
-    var hit_ratio: i32 = 0
-    if total > 0 {
-        hit_ratio = i32(cache.hit_count) / i32(total)
-    }
 
     var s: str = ""
     s = s + "EmbeddingCache { "
     s = s + "size=" + str(cache.current_size) + "/" + str(cache.max_size) + ", "
     s = s + "hits=" + str(cache.hit_count) + ", "
     s = s + "misses=" + str(cache.miss_count) + ", "
-    s = s + "hit_ratio=" + str(hit_ratio * 100.0) + "% }"
+    s = s + "total=" + str(total) + " }"
     s
 }
 
