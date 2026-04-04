@@ -1,0 +1,39 @@
+# GitHub Pages 설정
+title: FreeLang v4
+description: AI-First 프로그래밍 언어
+baseurl: /freelang-langv4
+url: https://kimjindol2025.github.io/freelang-langv4
+author: Kim Jin Dol
+email: contact@freelang.dev
+
+# 테마
+theme: jekyll-theme-minimal
+locale: ko_KR
+
+# Navigation
+navigation:
+  - title: 홈
+    url: /
+  - title: 언어 완성도
+    url: /language-completeness.html
+  - title: 학습 가이드
+    url: /learning-guide.html
+  - title: API 레퍼런스
+    url: /api-reference.html
+  - title: 성능 벤치마크
+    url: /benchmarks.html
+
+# Build 설정
+markdown: kramdown
+highlighter: rouge
+plugins:
+  - jekyll-sitemap
+  - jekyll-feed
+  - jekyll-seo-tag
+
+# 파일 제외
+exclude:
+  - .gitignore
+  - README.md
+  - LICENSE
+  - node_modules
