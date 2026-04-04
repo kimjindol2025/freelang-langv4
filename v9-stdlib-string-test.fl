@@ -1,0 +1,314 @@
+// FreeLang v9 문자열 함수 테스트
+// 내장 문자열 함수들 (length, substring, starts_with, char_code, str) 검증
+
+// ==================== 테스트 프레임워크 ====================
+
+struct TestCase {
+    name: str
+    passed: bool
+    message: str
+}
+
+struct TestSuite {
+    name: str
+    tests: [TestCase]
+    passed_count: i32
+    failed_count: i32
+}
+
+fn test_case_new(name: str, passed: bool, message: str) -> TestCase {
+    TestCase {
+        name: name,
+        passed: passed,
+        message: message
+    }
+}
+
+fn test_suite_new(name: str) -> TestSuite {
+    TestSuite {
+        name: name,
+        tests: [],
+        passed_count: 0,
+        failed_count: 0
+    }
+}
+
+fn test_suite_add(suite: TestSuite, test: TestCase) -> TestSuite {
+    suite.tests.push(test)
+
+    if test.passed {
+        suite.passed_count = suite.passed_count + 1
+        println("  ✅ " + test.name)
+    } else {
+        suite.failed_count = suite.failed_count + 1
+        println("  ❌ " + test.name + ": " + test.message)
+    }
+
+    suite
+}
+
+fn test_suite_report(suite: TestSuite) -> str {
+    var total = suite.passed_count + suite.failed_count
+    var output = ""
+
+    output = output + "╔════════════════════════════════════════════════╗\n"
+    output = output + "║ " + suite.name + "\n"
+    output = output + "╠════════════════════════════════════════════════╣\n"
+    output = output + "║ Passed: " + str(suite.passed_count) + " / " + str(total) + "\n"
+    output = output + "║ Failed: " + str(suite.failed_count) + " / " + str(total) + "\n"
+    output = output + "╚════════════════════════════════════════════════╝\n"
+
+    output
+}
+
+// ==================== 테스트 1: 기본 문자열 함수 ====================
+
+fn test_string_basic() -> TestSuite {
+    var suite = test_suite_new("기본 문자열 함수")
+
+    // length() - 빈 문자열
+    var t1 = test_case_new(
+        "length: 빈 문자열",
+        length("") == 0,
+        "length of empty string should be 0"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // length() - 일반 문자열
+    var t2 = test_case_new(
+        "length: 일반 문자열",
+        length("hello") == 5,
+        "length of 'hello' should be 5"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // length() - 한글
+    var t3 = test_case_new(
+        "length: 한글 문자열",
+        length("프리랑") == 3,
+        "length of '프리랑' should be 3"
+    )
+    suite = test_suite_add(suite, t3)
+
+    // substring() - 앞부분
+    var t4 = test_case_new(
+        "substring: 앞부분",
+        substring("FreeLang", 0, 4) == "Free",
+        "substring(FreeLang, 0, 4) should be 'Free'"
+    )
+    suite = test_suite_add(suite, t4)
+
+    // substring() - 중간
+    var t5 = test_case_new(
+        "substring: 중간",
+        substring("FreeLang", 4, 8) == "Lang",
+        "substring(FreeLang, 4, 8) should be 'Lang'"
+    )
+    suite = test_suite_add(suite, t5)
+
+    // substring() - 한 글자
+    var t6 = test_case_new(
+        "substring: 한 글자",
+        substring("abc", 1, 2) == "b",
+        "substring(abc, 1, 2) should be 'b'"
+    )
+    suite = test_suite_add(suite, t6)
+
+    suite
+}
+
+// ==================== 테스트 2: 문자열 검색 ====================
+
+fn test_string_search() -> TestSuite {
+    var suite = test_suite_new("문자열 검색")
+
+    // starts_with() - true 케이스
+    var t1 = test_case_new(
+        "starts_with: true 케이스",
+        starts_with("error:timeout", "error:"),
+        "starts_with should detect error prefix"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // starts_with() - false 케이스
+    var t2 = test_case_new(
+        "starts_with: false 케이스",
+        !starts_with("bool:true", "error:"),
+        "starts_with should return false for non-match"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // starts_with() - 정확한 매치
+    var t3 = test_case_new(
+        "starts_with: 정확한 매치",
+        starts_with("hello", "hello"),
+        "starts_with should match exact string"
+    )
+    suite = test_suite_add(suite, t3)
+
+    // char_code() - 'A'는 65
+    var t4 = test_case_new(
+        "char_code: 'A'는 65",
+        char_code("A") == 65,
+        "char_code of 'A' should be 65"
+    )
+    suite = test_suite_add(suite, t4)
+
+    // char_code() - '0'는 48
+    var t5 = test_case_new(
+        "char_code: '0'는 48",
+        char_code("0") == 48,
+        "char_code of '0' should be 48"
+    )
+    suite = test_suite_add(suite, t5)
+
+    // char_code() - 공백은 32
+    var t6 = test_case_new(
+        "char_code: 공백은 32",
+        char_code(" ") == 32,
+        "char_code of space should be 32"
+    )
+    suite = test_suite_add(suite, t6)
+
+    suite
+}
+
+// ==================== 테스트 3: 문자열 변환 ====================
+
+fn test_string_transform() -> TestSuite {
+    var suite = test_suite_new("문자열 변환")
+
+    // str() - 정수 → 문자열
+    var t1 = test_case_new(
+        "str(i32): 정수 → 문자열",
+        str(42) == "42",
+        "str(42) should be '42'"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // str() - 0
+    var t2 = test_case_new(
+        "str(i32): 0 → 문자열",
+        str(0) == "0",
+        "str(0) should be '0'"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // str() - true
+    var t3 = test_case_new(
+        "str(bool): true → 문자열",
+        str(true) == "true",
+        "str(true) should be 'true'"
+    )
+    suite = test_suite_add(suite, t3)
+
+    // str() - false
+    var t4 = test_case_new(
+        "str(bool): false → 문자열",
+        str(false) == "false",
+        "str(false) should be 'false'"
+    )
+    suite = test_suite_add(suite, t4)
+
+    // 문자열 연결
+    var t5 = test_case_new(
+        "연결: prefix + value",
+        "error:" + "timeout" == "error:timeout",
+        "string concatenation should work"
+    )
+    suite = test_suite_add(suite, t5)
+
+    // 빈 문자열 연결
+    var t6 = test_case_new(
+        "연결: 빈 문자열",
+        "" + "abc" == "abc",
+        "empty + string should equal string"
+    )
+    suite = test_suite_add(suite, t6)
+
+    suite
+}
+
+// ==================== 테스트 4: 문자열 비교 ====================
+
+fn test_string_compare() -> TestSuite {
+    var suite = test_suite_new("문자열 비교")
+
+    // 동등 비교
+    var t1 = test_case_new(
+        "비교: 같음",
+        "hello" == "hello",
+        "equal strings should match"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // 부등 비교
+    var t2 = test_case_new(
+        "비교: 다름",
+        "hello" != "world",
+        "different strings should not match"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // 빈 문자열 비교
+    var t3 = test_case_new(
+        "비교: 빈 문자열",
+        "" == "",
+        "empty strings should match"
+    )
+    suite = test_suite_add(suite, t3)
+
+    // 대소문자 구분
+    var t4 = test_case_new(
+        "비교: 대소문자 구분",
+        "Hello" != "hello",
+        "case should be sensitive"
+    )
+    suite = test_suite_add(suite, t4)
+
+    suite
+}
+
+// ==================== 메인 ====================
+
+fn main() {
+    println("╔═════════════════════════════════════════════════╗")
+    println("║  v9 문자열 함수 테스트                          ║")
+    println("╚═════════════════════════════════════════════════╝")
+    println("")
+
+    // 테스트 그룹 1
+    println("🧪 테스트 그룹 1: 기본 함수")
+    var suite1 = test_string_basic()
+    println(test_suite_report(suite1))
+
+    // 테스트 그룹 2
+    println("🧪 테스트 그룹 2: 검색")
+    var suite2 = test_string_search()
+    println(test_suite_report(suite2))
+
+    // 테스트 그룹 3
+    println("🧪 테스트 그룹 3: 변환")
+    var suite3 = test_string_transform()
+    println(test_suite_report(suite3))
+
+    // 테스트 그룹 4
+    println("🧪 테스트 그룹 4: 비교")
+    var suite4 = test_string_compare()
+    println(test_suite_report(suite4))
+
+    var total_passed = suite1.passed_count + suite2.passed_count + suite3.passed_count + suite4.passed_count
+    var total_failed = suite1.failed_count + suite2.failed_count + suite3.failed_count + suite4.failed_count
+    var total = total_passed + total_failed
+
+    println("═══════════════════════════════════════════════════")
+    println("전체: " + str(total_passed) + " / " + str(total) + " 통과")
+    println("═══════════════════════════════════════════════════")
+    println("")
+
+    if total_failed == 0 {
+        println("✅ v9 문자열 함수 테스트 완료!")
+    } else {
+        println("⚠️  " + str(total_failed) + "개 테스트 실패")
+    }
+}

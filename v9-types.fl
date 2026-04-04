@@ -1,0 +1,269 @@
+// FreeLang v9 표준 타입 시스템
+// Result 타입 + 상태 상수 함수 (enum 대체)
+
+// ==================== Result 타입 ====================
+
+struct Result {
+    ok: bool
+    value: str
+    error: str
+    error_code: str
+}
+
+// ==================== Result 생성 및 조작 ====================
+
+fn type_ok(value: str) -> Result {
+    Result {
+        ok: true,
+        value: value,
+        error: "",
+        error_code: ""
+    }
+}
+
+fn type_err(error: str, code: str) -> Result {
+    Result {
+        ok: false,
+        value: "",
+        error: error,
+        error_code: code
+    }
+}
+
+fn type_is_ok(r: Result) -> bool {
+    r.ok
+}
+
+fn type_is_err(r: Result) -> bool {
+    !r.ok
+}
+
+fn type_unwrap(r: Result) -> str {
+    if r.ok {
+        r.value
+    } else {
+        "ERROR: " + r.error + " (" + r.error_code + ")"
+    }
+}
+
+fn type_unwrap_or(r: Result, default_val: str) -> str {
+    if r.ok {
+        r.value
+    } else {
+        default_val
+    }
+}
+
+fn type_map(r: Result, transform: str) -> Result {
+    if r.ok {
+        type_ok(transform)
+    } else {
+        r
+    }
+}
+
+fn type_flatten(r: Result) -> Result {
+    if r.ok {
+        r
+    } else {
+        r
+    }
+}
+
+// ==================== 에러 처리 헬퍼 ====================
+
+fn is_eval_error(s: str) -> bool {
+    // "error:" 접두사 감지
+    if length(s) < 6 {
+        return false
+    }
+    substring(s, 0, 6) == "error:"
+}
+
+fn result_from_eval(eval_result: str) -> Result {
+    // 인터프리터 반환값 → Result 변환
+    if is_eval_error(eval_result) {
+        var err_msg = substring(eval_result, 6, length(eval_result))
+        type_err(err_msg, error_code_validation())
+    } else {
+        type_ok(eval_result)
+    }
+}
+
+fn type_unwrap_or_else(r: Result) -> str {
+    // 에러 시 에러 메시지 + 에러 코드 조합
+    if r.ok {
+        r.value
+    } else {
+        r.error + " [" + r.error_code + "]"
+    }
+}
+
+// ==================== 상태 상수 함수 (enum 대체) ====================
+
+;; 트랜잭션 상태
+fn status_pending() -> str {
+    "pending"
+}
+
+fn status_committed() -> str {
+    "committed"
+}
+
+fn status_failed() -> str {
+    "failed"
+}
+
+fn status_rolledback() -> str {
+    "rolledback"
+}
+
+;; 실행 상태
+fn status_success() -> str {
+    "success"
+}
+
+fn status_error() -> str {
+    "error"
+}
+
+fn status_timeout() -> str {
+    "timeout"
+}
+
+fn status_retrying() -> str {
+    "retrying"
+}
+
+;; 도구 상태
+fn status_available() -> str {
+    "available"
+}
+
+fn status_executing() -> str {
+    "executing"
+}
+
+fn status_completed() -> str {
+    "completed"
+}
+
+// ==================== 블록 타입 상수 함수 ====================
+
+fn block_intent() -> str {
+    "INTENT"
+}
+
+fn block_func() -> str {
+    "FUNC"
+}
+
+fn block_pipe() -> str {
+    "PIPE"
+}
+
+fn block_prompt() -> str {
+    "PROMPT"
+}
+
+fn block_agent() -> str {
+    "AGENT"
+}
+
+// ==================== 에러 코드 상수 ====================
+
+fn error_code_timeout() -> str {
+    "E_TIMEOUT"
+}
+
+fn error_code_max_retries() -> str {
+    "E_MAX_RETRIES"
+}
+
+fn error_code_validation() -> str {
+    "E_VALIDATION"
+}
+
+fn error_code_api_error() -> str {
+    "E_API_ERROR"
+}
+
+fn error_code_not_found() -> str {
+    "E_NOT_FOUND"
+}
+
+fn error_code_unauthorized() -> str {
+    "E_UNAUTHORIZED"
+}
+
+fn error_code_cost_exceeded() -> str {
+    "E_COST_EXCEEDED"
+}
+
+fn error_code_token_exceeded() -> str {
+    "E_TOKEN_EXCEEDED"
+}
+
+// ==================== 모델 상수 ====================
+
+fn model_opus() -> str {
+    "claude-opus-4-6"
+}
+
+fn model_sonnet() -> str {
+    "claude-sonnet-4-6"
+}
+
+fn model_haiku() -> str {
+    "claude-haiku-4-5"
+}
+
+// ==================== 테스트 ====================
+
+fn main() {
+    println("=== v9 타입 시스템 테스트 ===")
+    println("")
+
+    ;; Result OK 테스트
+    var ok_result = type_ok("success_value")
+    println("OK Result: " + type_unwrap(ok_result))
+    println("is_ok: " + if type_is_ok(ok_result) "true" else "false")
+    println("")
+
+    ;; Result Error 테스트
+    var err_result = type_err("API 실패", error_code_api_error())
+    println("Error Result: " + type_unwrap(err_result))
+    println("is_err: " + if type_is_err(err_result) "true" else "false")
+    println("")
+
+    ;; 상태 상수 테스트
+    println("상태 상수:")
+    println("  pending: " + status_pending())
+    println("  committed: " + status_committed())
+    println("  failed: " + status_failed())
+    println("  success: " + status_success())
+    println("")
+
+    ;; 블록 타입 상수 테스트
+    println("블록 타입:")
+    println("  INTENT: " + block_intent())
+    println("  FUNC: " + block_func())
+    println("  PIPE: " + block_pipe())
+    println("  PROMPT: " + block_prompt())
+    println("  AGENT: " + block_agent())
+    println("")
+
+    ;; 모델 상수 테스트
+    println("모델:")
+    println("  opus: " + model_opus())
+    println("  sonnet: " + model_sonnet())
+    println("  haiku: " + model_haiku())
+    println("")
+
+    ;; unwrap_or 테스트
+    var fallback = type_unwrap_or(err_result, "default_value")
+    println("unwrap_or: " + fallback)
+    println("")
+
+    println("✅ v9 타입 시스템 로드 완료")
+}

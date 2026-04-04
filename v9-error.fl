@@ -1,0 +1,402 @@
+// FreeLang v9 에러 처리 전략
+// retry / fallback / timeout 정책
+
+// ==================== 에러 정책 구조 ====================
+
+struct ErrorPolicy {
+    max_retries: i32
+    retry_delay_ms: i32
+    backoff_factor: f64
+    timeout_ms: i32
+    has_fallback: bool
+    fallback_value: str
+}
+
+struct ErrorContext {
+    operation: str
+    attempt: i32
+    last_error: str
+    elapsed_ms: i32
+    status: str
+}
+
+// ==================== ErrorPolicy 생성 및 설정 ====================
+
+fn error_policy_new() -> ErrorPolicy {
+    ErrorPolicy {
+        max_retries: 0,
+        retry_delay_ms: 1000,
+        backoff_factor: 1.5,
+        timeout_ms: 30000,
+        has_fallback: false,
+        fallback_value: ""
+    }
+}
+
+fn error_policy_with_retry(policy: ErrorPolicy, max_retries: i32, delay_ms: i32) -> ErrorPolicy {
+    policy.max_retries = max_retries
+    policy.retry_delay_ms = delay_ms
+    policy
+}
+
+fn error_policy_with_backoff(policy: ErrorPolicy, factor: f64) -> ErrorPolicy {
+    policy.backoff_factor = factor
+    policy
+}
+
+fn error_policy_with_timeout(policy: ErrorPolicy, timeout_ms: i32) -> ErrorPolicy {
+    policy.timeout_ms = timeout_ms
+    policy
+}
+
+fn error_policy_with_fallback(policy: ErrorPolicy, fallback_value: str) -> ErrorPolicy {
+    policy.has_fallback = true
+    policy.fallback_value = fallback_value
+    policy
+}
+
+fn error_policy_display(policy: ErrorPolicy) -> str {
+    var s: str = ""
+    s = s + "ErrorPolicy { "
+    s = s + "retries=" + str(policy.max_retries) + ", "
+    s = s + "delay=" + str(policy.retry_delay_ms) + "ms, "
+    s = s + "timeout=" + str(policy.timeout_ms) + "ms, "
+    s = s + "fallback=" + if policy.has_fallback "yes" else "no" + " }"
+    s
+}
+
+// ==================== ErrorContext 생성 및 조작 ====================
+
+fn error_context_new(operation: str) -> ErrorContext {
+    ErrorContext {
+        operation: operation,
+        attempt: 0,
+        last_error: "",
+        elapsed_ms: 0,
+        status: "pending"
+    }
+}
+
+fn error_context_attempt(ctx: ErrorContext) -> ErrorContext {
+    ctx.attempt = ctx.attempt + 1
+    ctx.status = "retrying"
+    ctx
+}
+
+fn error_context_record(ctx: ErrorContext, error: str) -> ErrorContext {
+    ctx.last_error = error
+    ctx.status = "error"
+    ctx
+}
+
+fn error_context_success(ctx: ErrorContext) -> ErrorContext {
+    ctx.status = "success"
+    ctx
+}
+
+fn error_context_timeout(ctx: ErrorContext) -> ErrorContext {
+    ctx.status = "timeout"
+    ctx
+}
+
+fn error_context_elapsed(ctx: ErrorContext, elapsed: i32) -> ErrorContext {
+    ctx.elapsed_ms = elapsed
+    ctx
+}
+
+// ==================== Retry 로직 ====================
+
+fn should_retry(ctx: ErrorContext, policy: ErrorPolicy) -> bool {
+    if ctx.status != "error" {
+        return false
+    }
+    if ctx.attempt >= policy.max_retries {
+        return false
+    }
+    if ctx.elapsed_ms >= policy.timeout_ms {
+        return false
+    }
+    true
+}
+
+fn get_retry_delay(policy: ErrorPolicy, attempt: i32) -> i32 {
+    var base_delay: f64 = f64(policy.retry_delay_ms)
+    var multiplier: f64 = pow(policy.backoff_factor, f64(attempt))
+    i32(base_delay * multiplier)
+}
+
+fn apply_backoff(delay: i32) -> i32 {
+    ;; 실제로 sleep을 하지는 않으므로 지연 시간만 반환
+    delay
+}
+
+// ==================== Fallback 적용 ====================
+
+fn apply_fallback(policy: ErrorPolicy, error: str) -> str {
+    if policy.has_fallback {
+        policy.fallback_value
+    } else {
+        "ERROR: " + error
+    }
+}
+
+fn apply_fallback_or_fail(policy: ErrorPolicy, ctx: ErrorContext) -> str {
+    if policy.has_fallback {
+        policy.fallback_value
+    } else {
+        ctx.last_error
+    }
+}
+
+// ==================== 통합 실행 함수 ====================
+
+fn execute_with_policy(
+    operation_name: str,
+    operation_result: str,
+    policy: ErrorPolicy
+) -> str {
+    var ctx = error_context_new(operation_name)
+    var current_result = operation_result
+
+    ;; 초기 실행이 성공했다면 바로 반환
+    if length(current_result) > 0 && substring(current_result, 0, 5) != "ERROR" {
+        return current_result
+    }
+
+    ;; 에러 처리 루프
+    var attempt: i32 = 0
+    while attempt < policy.max_retries {
+        ctx = error_context_attempt(ctx)
+        var delay = get_retry_delay(policy, attempt)
+        ;; delay 적용 (실제 sleep은 하지 않음, 지연 추적만)
+        ctx = error_context_elapsed(ctx, delay)
+
+        if ctx.elapsed_ms >= policy.timeout_ms {
+            ctx = error_context_timeout(ctx)
+            return "TIMEOUT: " + operation_name
+        }
+
+        ;; 재시도 (실제로는 operation을 다시 실행)
+        ;; 여기서는 흉내만 냄
+        current_result = operation_result
+
+        if length(current_result) > 0 && substring(current_result, 0, 5) != "ERROR" {
+            ctx = error_context_success(ctx)
+            return current_result
+        }
+
+        attempt = attempt + 1
+    }
+
+    ;; 모든 재시도 실패 → fallback 적용
+    apply_fallback_or_fail(policy, ctx)
+}
+
+// ==================== PROMPT 블록용 안전 실행 ====================
+
+struct SafePromptExecution {
+    result: str
+    status: str
+    error: str
+    retries_used: i32
+    latency_ms: i32
+}
+
+fn execute_prompt_safe(
+    prompt_name: str,
+    prompt_input: str,
+    model: str,
+    policy: ErrorPolicy
+) -> SafePromptExecution {
+    var exec = SafePromptExecution {
+        result: "",
+        status: "pending",
+        error: "",
+        retries_used: 0,
+        latency_ms: 0
+    }
+
+    var ctx = error_context_new(prompt_name)
+    var attempt: i32 = 0
+
+    ;; 재시도 루프
+    while attempt < policy.max_retries || attempt == 0 {
+        if attempt > 0 {
+            ctx = error_context_attempt(ctx)
+            var delay = get_retry_delay(policy, attempt - 1)
+            exec.latency_ms = exec.latency_ms + delay
+        }
+
+        ;; timeout 체크
+        if exec.latency_ms >= policy.timeout_ms {
+            exec.status = "timeout"
+            exec.error = "Exceeded max latency " + str(policy.timeout_ms) + "ms"
+            return exec
+        }
+
+        ;; 실제 prompt 실행 (흉내)
+        var prompt_result = "[PROMPT " + prompt_name + " :input " + prompt_input + " :model " + model + "]"
+
+        ;; 성공 판정
+        if length(prompt_result) > 0 {
+            exec.result = prompt_result
+            exec.status = "success"
+            exec.retries_used = attempt
+            return exec
+        }
+
+        attempt = attempt + 1
+    }
+
+    ;; 모든 재시도 실패
+    if policy.has_fallback {
+        exec.result = policy.fallback_value
+        exec.status = "fallback"
+        exec.error = "Used fallback after " + str(attempt) + " retries"
+    } else {
+        exec.status = "failed"
+        exec.error = "Max retries exhausted (" + str(policy.max_retries) + ")"
+    }
+
+    exec.retries_used = attempt
+    exec
+}
+
+// ==================== 검증 유틸리티 ====================
+
+fn validate_not_empty_result(r: Result, field_name: str) -> Result {
+    // 이미 에러 상태면 그대로 반환
+    if !r.ok {
+        return r
+    }
+
+    // 값이 비어있으면 에러 반환
+    if length(r.value) == 0 {
+        return type_err(field_name + " cannot be empty", error_code_validation())
+    }
+
+    // 정상
+    r
+}
+
+fn validate_positive_result(r: Result, field_name: str) -> Result {
+    // 이미 에러 상태면 그대로 반환
+    if !r.ok {
+        return r
+    }
+
+    // 간이 숫자 체크 (첫 글자가 0-9인지 확인)
+    if length(r.value) == 0 {
+        return type_err(field_name + " cannot be empty", error_code_validation())
+    }
+
+    var first_char_code = char_code(substring(r.value, 0, 1))
+    var is_positive = first_char_code >= 48 && first_char_code <= 57
+
+    if is_positive && i32(r.value) > 0 {
+        return r
+    }
+
+    type_err(field_name + " must be positive, got: " + r.value, error_code_validation())
+}
+
+fn validate_range_result(r: Result, field_name: str, min_val: str, max_val: str) -> Result {
+    // 이미 에러 상태면 그대로 반환
+    if !r.ok {
+        return r
+    }
+
+    // 간이 숫자 체크
+    var first_char_code = char_code(substring(r.value, 0, 1))
+    var is_num = first_char_code >= 48 && first_char_code <= 57
+
+    if !is_num {
+        return type_err(field_name + " must be a number", error_code_validation())
+    }
+
+    var val = i32(r.value)
+    var min = i32(min_val)
+    var max = i32(max_val)
+
+    if val >= min && val <= max {
+        return r
+    }
+
+    type_err(field_name + " must be between " + min_val + " and " + max_val + ", got: " + r.value, error_code_validation())
+}
+
+fn validate_chain(r: Result, validators_applied: i32) -> Result {
+    // 에러 상태면 그대로 전파
+    if !r.ok {
+        return r
+    }
+
+    // 성공 결과에 검증 횟수 기록
+    type_ok("validated:" + str(validators_applied) + ":ok")
+}
+
+fn make_type_error_str(expected_type: str, actual_value: str) -> str {
+    "TypeError: expected " + expected_type + ", got '" + actual_value + "'"
+}
+
+// ==================== 테스트 ====================
+
+fn main() {
+    println("=== v9 에러 처리 전략 테스트 ===")
+    println("")
+
+    ;; ErrorPolicy 생성 및 설정
+    var policy = error_policy_new()
+    policy = error_policy_with_retry(policy, 3, 1000)
+    policy = error_policy_with_timeout(policy, 30000)
+    policy = error_policy_with_fallback(policy, "fallback_value")
+
+    println("정책 설정:")
+    println(error_policy_display(policy))
+    println("")
+
+    ;; ErrorContext 생성
+    var ctx = error_context_new("api_call")
+    println("초기 상태:")
+    println("  operation: " + ctx.operation)
+    println("  status: " + ctx.status)
+    println("  attempt: " + str(ctx.attempt))
+    println("")
+
+    ;; 에러 기록
+    ctx = error_context_record(ctx, "Connection timeout")
+    println("에러 발생 후:")
+    println("  status: " + ctx.status)
+    println("  error: " + ctx.last_error)
+    println("")
+
+    ;; Retry 판정
+    var should_retry_result = should_retry(ctx, policy)
+    println("should_retry: " + if should_retry_result "true" else "false")
+    println("")
+
+    ;; Backoff 계산
+    var delay_0 = get_retry_delay(policy, 0)
+    var delay_1 = get_retry_delay(policy, 1)
+    var delay_2 = get_retry_delay(policy, 2)
+    println("Retry 지연 (exponential backoff):")
+    println("  attempt 0: " + str(delay_0) + "ms")
+    println("  attempt 1: " + str(delay_1) + "ms")
+    println("  attempt 2: " + str(delay_2) + "ms")
+    println("")
+
+    ;; SafePromptExecution 테스트
+    var safe_exec = execute_prompt_safe(
+        "classify_sentiment",
+        "This is great!",
+        "claude-haiku-4-5",
+        policy
+    )
+    println("Safe Prompt Execution:")
+    println("  status: " + safe_exec.status)
+    println("  retries_used: " + str(safe_exec.retries_used))
+    println("  latency: " + str(safe_exec.latency_ms) + "ms")
+    println("")
+
+    println("✅ 에러 처리 전략 로드 완료")
+}

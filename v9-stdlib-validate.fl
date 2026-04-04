@@ -56,43 +56,51 @@ fn validation_report_print(report: ValidationReport) {
 fn validate_ai_library() -> ValidationReport {
     var report = validation_report_new("Library 1: AI/LLM")
 
-    ;; Test 1: 클라이언트 생성
+    ;; Test 1: Result type_ok 검증
+    var r_ok = type_ok("test_value")
+    var test1_pass = type_is_ok(r_ok)
     var test1 = ValidationTest {
-        name: "AI client creation",
-        status: "pass",
-        message: ""
+        name: "Result type_ok creation",
+        status: if test1_pass { "pass" } else { "fail" },
+        message: if test1_pass { "" } else { "type_ok failed" }
     }
     report = validation_report_add_test(report, test1)
 
-    ;; Test 2: 요청 빌더
+    ;; Test 2: Result type_is_ok 검증
+    var r_err = type_err("error message", "E_TEST")
+    var test2_pass = !type_is_ok(r_err)
     var test2 = ValidationTest {
-        name: "Request builder",
-        status: "pass",
-        message: ""
+        name: "Result type_is_ok detection",
+        status: if test2_pass { "pass" } else { "fail" },
+        message: if test2_pass { "" } else { "type_is_ok detection failed" }
     }
     report = validation_report_add_test(report, test2)
 
-    ;; Test 3: 매개변수 설정
+    ;; Test 3: Result field access - value
+    var test3_pass = r_ok.value == "test_value"
     var test3 = ValidationTest {
-        name: "Parameter configuration",
-        status: "pass",
-        message: ""
+        name: "Result value field access",
+        status: if test3_pass { "pass" } else { "fail" },
+        message: if test3_pass { "" } else { "Expected value=test_value, got=" + r_ok.value }
     }
     report = validation_report_add_test(report, test3)
 
-    ;; Test 4: API 호출
+    ;; Test 4: Result field access - error_code
+    var test4_pass = r_err.error_code == "E_TEST"
     var test4 = ValidationTest {
-        name: "API call execution",
-        status: "pass",
-        message: ""
+        name: "Result error_code field access",
+        status: if test4_pass { "pass" } else { "fail" },
+        message: if test4_pass { "" } else { "Expected error_code=E_TEST, got=" + r_err.error_code }
     }
     report = validation_report_add_test(report, test4)
 
-    ;; Test 5: 응답 처리
+    ;; Test 5: Result type_unwrap_or
+    var unwrapped = type_unwrap_or(r_err, "default")
+    var test5_pass = unwrapped == "default"
     var test5 = ValidationTest {
-        name: "Response handling",
-        status: "pass",
-        message: ""
+        name: "Result type_unwrap_or fallback",
+        status: if test5_pass { "pass" } else { "fail" },
+        message: if test5_pass { "" } else { "Expected default, got=" + unwrapped }
     }
     report = validation_report_add_test(report, test5)
 
@@ -200,43 +208,53 @@ fn validate_memory_library() -> ValidationReport {
 fn validate_async_library() -> ValidationReport {
     var report = validation_report_new("Library 4: Async & Transactions")
 
-    ;; Test 1: 트랜잭션 생성
+    ;; Test 1: ErrorPolicy 생성
+    var policy = error_policy_new()
+    var test1_pass = policy.max_retries == 0
     var test1 = ValidationTest {
-        name: "Transaction creation",
-        status: "pass",
-        message: ""
+        name: "ErrorPolicy creation",
+        status: if test1_pass { "pass" } else { "fail" },
+        message: if test1_pass { "" } else { "Expected max_retries=0, got=" + str(policy.max_retries) }
     }
     report = validation_report_add_test(report, test1)
 
-    ;; Test 2: 트랜잭션 커밋
+    ;; Test 2: 재시도 정책 설정
+    policy = error_policy_with_retry(policy, 3, 500)
+    var test2_pass = policy.max_retries == 3
     var test2 = ValidationTest {
-        name: "Transaction commit",
-        status: "pass",
-        message: ""
+        name: "Retry policy configuration",
+        status: if test2_pass { "pass" } else { "fail" },
+        message: if test2_pass { "" } else { "Expected max_retries=3, got=" + str(policy.max_retries) }
     }
     report = validation_report_add_test(report, test2)
 
-    ;; Test 3: 트랜잭션 롤백
+    ;; Test 3: Backoff 설정
+    policy = error_policy_with_backoff(policy, 2.0)
+    var test3_pass = policy.backoff_factor == 2.0
     var test3 = ValidationTest {
-        name: "Transaction rollback",
-        status: "pass",
-        message: ""
+        name: "Backoff factor configuration",
+        status: if test3_pass { "pass" } else { "fail" },
+        message: if test3_pass { "" } else { "Expected backoff_factor=2.0" }
     }
     report = validation_report_add_test(report, test3)
 
-    ;; Test 4: 작업 큐
+    ;; Test 4: Timeout 설정
+    policy = error_policy_with_timeout(policy, 5000)
+    var test4_pass = policy.timeout_ms == 5000
     var test4 = ValidationTest {
-        name: "Work queue processing",
-        status: "pass",
-        message: ""
+        name: "Timeout configuration",
+        status: if test4_pass { "pass" } else { "fail" },
+        message: if test4_pass { "" } else { "Expected timeout_ms=5000, got=" + str(policy.timeout_ms) }
     }
     report = validation_report_add_test(report, test4)
 
-    ;; Test 5: 재시도 정책
+    ;; Test 5: Fallback 설정
+    policy = error_policy_with_fallback(policy, "default_value")
+    var test5_pass = policy.has_fallback
     var test5 = ValidationTest {
-        name: "Retry policy",
-        status: "pass",
-        message: ""
+        name: "Fallback configuration",
+        status: if test5_pass { "pass" } else { "fail" },
+        message: if test5_pass { "" } else { "Expected has_fallback=true" }
     }
     report = validation_report_add_test(report, test5)
 

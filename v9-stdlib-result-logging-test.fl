@@ -1,0 +1,368 @@
+// FreeLang v9 Result 타입 + Logger 통합 테스트
+// v9-types.fl의 Result 필드 검증 + v9-error.fl의 검증 함수
+
+// ==================== 테스트 프레임워크 ====================
+
+struct TestCase {
+    name: str
+    passed: bool
+    message: str
+}
+
+struct TestSuite {
+    name: str
+    tests: [TestCase]
+    passed_count: i32
+    failed_count: i32
+}
+
+fn test_case_new(name: str, passed: bool, message: str) -> TestCase {
+    TestCase {
+        name: name,
+        passed: passed,
+        message: message
+    }
+}
+
+fn test_suite_new(name: str) -> TestSuite {
+    TestSuite {
+        name: name,
+        tests: [],
+        passed_count: 0,
+        failed_count: 0
+    }
+}
+
+fn test_suite_add(suite: TestSuite, test: TestCase) -> TestSuite {
+    suite.tests.push(test)
+
+    if test.passed {
+        suite.passed_count = suite.passed_count + 1
+        println("  ✅ " + test.name)
+    } else {
+        suite.failed_count = suite.failed_count + 1
+        println("  ❌ " + test.name + ": " + test.message)
+    }
+
+    suite
+}
+
+fn test_suite_report(suite: TestSuite) -> str {
+    var total = suite.passed_count + suite.failed_count
+    var output = ""
+
+    output = output + "╔════════════════════════════════════════════════╗\n"
+    output = output + "║ " + suite.name + "\n"
+    output = output + "╠════════════════════════════════════════════════╣\n"
+    output = output + "║ Passed: " + str(suite.passed_count) + " / " + str(total) + "\n"
+    output = output + "║ Failed: " + str(suite.failed_count) + " / " + str(total) + "\n"
+    output = output + "╚════════════════════════════════════════════════╝\n"
+
+    output
+}
+
+// ==================== 간단한 Logger 구현 ====================
+
+struct LogEntry {
+    level: str
+    message: str
+}
+
+struct Logger {
+    entries: [LogEntry]
+    level: str
+    count: i32
+}
+
+fn logger_new(level: str) -> Logger {
+    Logger {
+        entries: [],
+        level: level,
+        count: 0
+    }
+}
+
+fn logger_log(l: Logger, msg: str) -> Logger {
+    var entry = LogEntry {
+        level: "INFO",
+        message: msg
+    }
+    l.entries.push(entry)
+    l.count = l.count + 1
+    l
+}
+
+fn logger_count(l: Logger) -> i32 {
+    l.count
+}
+
+// ==================== 테스트 1: Result 필드 직접 접근 ====================
+
+fn test_result_fields() -> TestSuite {
+    var suite = test_suite_new("Result 필드 직접 접근")
+
+    // type_ok 생성
+    var r_ok = type_ok("hello")
+
+    // ok 필드: type_ok → true
+    var t1 = test_case_new(
+        "ok 필드: type_ok → true",
+        r_ok.ok == true,
+        "ok field should be true for type_ok"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // value 필드: type_ok → 입력값
+    var t2 = test_case_new(
+        "value 필드: 입력값 저장",
+        r_ok.value == "hello",
+        "value field should store input"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // error 필드: type_ok → 빈 문자열
+    var t3 = test_case_new(
+        "error 필드: type_ok → 빈 문자열",
+        r_ok.error == "",
+        "error field should be empty for ok"
+    )
+    suite = test_suite_add(suite, t3)
+
+    // error_code 필드: type_ok → 빈 문자열
+    var t4 = test_case_new(
+        "error_code 필드: type_ok → 빈 문자열",
+        r_ok.error_code == "",
+        "error_code field should be empty for ok"
+    )
+    suite = test_suite_add(suite, t4)
+
+    // type_err 생성
+    var r_err = type_err("API 실패", "E_API_ERROR")
+
+    // ok 필드: type_err → false
+    var t5 = test_case_new(
+        "ok 필드: type_err → false",
+        r_err.ok == false,
+        "ok field should be false for type_err"
+    )
+    suite = test_suite_add(suite, t5)
+
+    // value 필드: type_err → 빈 문자열
+    var t6 = test_case_new(
+        "value 필드: type_err → 빈 문자열",
+        r_err.value == "",
+        "value field should be empty for err"
+    )
+    suite = test_suite_add(suite, t6)
+
+    // error 필드: type_err → 메시지
+    var t7 = test_case_new(
+        "error 필드: 에러 메시지 저장",
+        r_err.error == "API 실패",
+        "error field should store message"
+    )
+    suite = test_suite_add(suite, t7)
+
+    // error_code 필드: type_err → 코드
+    var t8 = test_case_new(
+        "error_code 필드: 에러 코드 저장",
+        r_err.error_code == "E_API_ERROR",
+        "error_code field should store code"
+    )
+    suite = test_suite_add(suite, t8)
+
+    suite
+}
+
+// ==================== 테스트 2: Result 함수 ====================
+
+fn test_result_functions() -> TestSuite {
+    var suite = test_suite_new("Result 함수 검증")
+
+    var r_ok = type_ok("success")
+    var r_err = type_err("failed", "E_TEST")
+
+    // type_is_ok
+    var t1 = test_case_new(
+        "type_is_ok: 성공",
+        type_is_ok(r_ok),
+        "type_is_ok should return true for ok"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // type_is_err
+    var t2 = test_case_new(
+        "type_is_err: 실패",
+        type_is_err(r_err),
+        "type_is_err should return true for err"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // type_unwrap_or - 성공
+    var unwrapped_ok = type_unwrap_or(r_ok, "default")
+    var t3 = test_case_new(
+        "type_unwrap_or: 성공값 반환",
+        unwrapped_ok == "success",
+        "type_unwrap_or should return value for ok"
+    )
+    suite = test_suite_add(suite, t3)
+
+    // type_unwrap_or - 실패
+    var unwrapped_err = type_unwrap_or(r_err, "fallback")
+    var t4 = test_case_new(
+        "type_unwrap_or: 기본값 반환",
+        unwrapped_err == "fallback",
+        "type_unwrap_or should return default for err"
+    )
+    suite = test_suite_add(suite, t4)
+
+    suite
+}
+
+// ==================== 테스트 3: 검증 함수 ====================
+
+fn test_result_validation() -> TestSuite {
+    var suite = test_suite_new("Result 검증 함수 (v9-error.fl)")
+
+    // validate_not_empty_result - 비어있지 않음
+    var ok_result = type_ok("some_value")
+    var validated = validate_not_empty_result(ok_result, "result")
+    var t1 = test_case_new(
+        "validate_not_empty: 비어있지 않으면 통과",
+        validated.ok,
+        "non-empty result should pass validation"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // validate_not_empty_result - 비어있음
+    var empty_result = type_ok("")
+    var empty_validated = validate_not_empty_result(empty_result, "result")
+    var t2 = test_case_new(
+        "validate_not_empty: 빈 값이면 에러",
+        !empty_validated.ok,
+        "empty value should fail validation"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // validate_positive_result - 양수
+    var pos_result = type_ok("42")
+    var pos_validated = validate_positive_result(pos_result, "count")
+    var t3 = test_case_new(
+        "validate_positive: 양수면 통과",
+        pos_validated.ok,
+        "positive number should pass validation"
+    )
+    suite = test_suite_add(suite, t3)
+
+    // validate_positive_result - 음수
+    var neg_result = type_ok("-5")
+    var neg_validated = validate_positive_result(neg_result, "count")
+    var t4 = test_case_new(
+        "validate_positive: 음수면 에러",
+        !neg_validated.ok,
+        "negative number should fail validation"
+    )
+    suite = test_suite_add(suite, t4)
+
+    // validate_range_result - 범위 내
+    var in_range = type_ok("50")
+    var range_validated = validate_range_result(in_range, "score", "0", "100")
+    var t5 = test_case_new(
+        "validate_range: 범위 내 통과",
+        range_validated.ok,
+        "value in range should pass"
+    )
+    suite = test_suite_add(suite, t5)
+
+    // validate_range_result - 범위 외
+    var out_range = type_ok("150")
+    var out_validated = validate_range_result(out_range, "score", "0", "100")
+    var t6 = test_case_new(
+        "validate_range: 범위 외 실패",
+        !out_validated.ok,
+        "value out of range should fail"
+    )
+    suite = test_suite_add(suite, t6)
+
+    suite
+}
+
+// ==================== 테스트 4: Logger ====================
+
+fn test_logger_basic() -> TestSuite {
+    var suite = test_suite_new("Logger 기본 기능")
+
+    // Logger 생성
+    var logger = logger_new("INFO")
+    var t1 = test_case_new(
+        "Logger 생성: 초기 크기=0",
+        logger_count(logger) == 0,
+        "new logger should have count 0"
+    )
+    suite = test_suite_add(suite, t1)
+
+    // 로그 추가
+    logger = logger_log(logger, "Test message 1")
+    var t2 = test_case_new(
+        "로그 추가: 크기 증가",
+        logger_count(logger) == 1,
+        "logger count should be 1 after logging"
+    )
+    suite = test_suite_add(suite, t2)
+
+    // 로그 추가 2
+    logger = logger_log(logger, "Test message 2")
+    logger = logger_log(logger, "Test message 3")
+    var t3 = test_case_new(
+        "다중 로그: 크기",
+        logger_count(logger) == 3,
+        "logger count should be 3 after 3 logs"
+    )
+    suite = test_suite_add(suite, t3)
+
+    suite
+}
+
+// ==================== 메인 ====================
+
+fn main() {
+    println("╔═════════════════════════════════════════════════╗")
+    println("║  v9 Result + Logger 통합 테스트                 ║")
+    println("╚═════════════════════════════════════════════════╝")
+    println("")
+
+    // 테스트 1
+    println("🧪 테스트 1: Result 필드 접근")
+    var suite1 = test_result_fields()
+    println(test_suite_report(suite1))
+
+    // 테스트 2
+    println("🧪 테스트 2: Result 함수")
+    var suite2 = test_result_functions()
+    println(test_suite_report(suite2))
+
+    // 테스트 3
+    println("🧪 테스트 3: 검증 함수")
+    var suite3 = test_result_validation()
+    println(test_suite_report(suite3))
+
+    // 테스트 4
+    println("🧪 테스트 4: Logger")
+    var suite4 = test_logger_basic()
+    println(test_suite_report(suite4))
+
+    var total_passed = suite1.passed_count + suite2.passed_count + suite3.passed_count + suite4.passed_count
+    var total_failed = suite1.failed_count + suite2.failed_count + suite3.failed_count + suite4.failed_count
+    var total = total_passed + total_failed
+
+    println("═══════════════════════════════════════════════════")
+    println("전체: " + str(total_passed) + " / " + str(total) + " 통과")
+    println("═══════════════════════════════════════════════════")
+    println("")
+
+    if total_failed == 0 {
+        println("✅ v9 Result + Logger 테스트 완료!")
+    } else {
+        println("⚠️  " + str(total_failed) + "개 테스트 실패")
+    }
+}
