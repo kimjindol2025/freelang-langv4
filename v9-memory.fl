@@ -150,18 +150,25 @@ fn embedding_cache_get(cache: EmbeddingCache, key: str) -> [f64] {
     var i: i32 = 0
     while i < length(cache.keys) {
         if cache.keys[i] == key {
+            println("[CACHE] Hit: " + key)
             return cache.values[i]
         }
         i = i + 1
     }
 
-    // 없으면 임베딩 생성
+    // 없으면 임베딩 생성 후 캐시에 저장
+    println("[CACHE] Miss: " + key + " → generating...")
     var embedding: [f64] = []
     var j: i32 = 0
     while j < 5 {
         embedding.push(0.5)
         j = j + 1
     }
+
+    // 버그 수정: 생성한 임베딩을 캐시에 저장!
+    cache.keys.push(key)
+    cache.values.push(embedding)
+    println("[CACHE] Stored: " + key)
 
     embedding
 }

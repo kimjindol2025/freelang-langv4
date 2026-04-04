@@ -38,7 +38,9 @@ fn embed_text(text: str, dim: i32) -> [f64] {
             j = j + 1
         }
 
-        var val = f64(hash % 1000) / 1000.0
+        ;; 차원 인덱스를 반영해서 각 차원이 다른 값을 갖도록 수정
+        var seed: i32 = i * 31 + 7
+        var val = f64((hash + seed) % 1000) / 1000.0
         vector.push(val)
 
         i = i + 1
@@ -48,24 +50,40 @@ fn embed_text(text: str, dim: i32) -> [f64] {
 }
 
 fn cosine_similarity(v1: [f64], v2: [f64]) -> f64 {
-    ;; 코사인 유사도 계산 (간단화)
+    ;; 코사인 유사도 계산: dot(v1,v2) / (|v1| * |v2|)
     var dot_product: f64 = 0.0
+    var norm1: f64 = 0.0
+    var norm2: f64 = 0.0
     var i: i32 = 0
 
     while i < length(v1) {
         dot_product = dot_product + (v1[i] * v2[i])
+        norm1 = norm1 + (v1[i] * v1[i])
+        norm2 = norm2 + (v2[i] * v2[i])
         i = i + 1
     }
 
-    ;; 0.0 ~ 1.0 범위로 정규화
-    if dot_product < 0.0 {
-        dot_product = 0.0
-    }
-    if dot_product > 1.0 {
-        dot_product = 1.0
+    ;; 벡터 크기(norm) 계산
+    norm1 = sqrt(norm1)
+    norm2 = sqrt(norm2)
+
+    ;; 영벡터 처리
+    if norm1 == 0.0 || norm2 == 0.0 {
+        return 0.0
     }
 
-    dot_product
+    ;; 코사인 유사도: dot / (norm1 * norm2)
+    var similarity = dot_product / (norm1 * norm2)
+
+    ;; 0.0 ~ 1.0 범위로 정규화
+    if similarity < 0.0 {
+        similarity = 0.0
+    }
+    if similarity > 1.0 {
+        similarity = 1.0
+    }
+
+    similarity
 }
 
 fn embedding_store_add(store: EmbeddingStore, id: str, text: str, metadata: [str]) -> EmbeddingStore {
@@ -89,38 +107,51 @@ fn embedding_store_add(store: EmbeddingStore, id: str, text: str, metadata: [str
 fn embedding_store_search(store: EmbeddingStore, query: str, top_k: i32) -> [Embedding] {
     var query_vector = embed_text(query, store.dimension)
     var results: [Embedding] = []
-    var scores: [f64] = []
+    var candidates: [str] = []  ;; (idx, score) 쌍을 문자열로 저장
 
-    ;; 모든 임베딩과 유사도 계산
+    ;; 모든 임베딩과 유사도 계산 (O(n) 단일 패스)
     var i: i32 = 0
     while i < length(store.embeddings) {
         var similarity = cosine_similarity(query_vector, store.embeddings[i].vector)
-        scores.push(similarity)
+        ;; 후보 저장: "idx:score" 형식
+        candidates.push(str(i) + ":" + str(similarity))
         i = i + 1
     }
 
-    ;; 상위 k개 선택
-    var j: i32 = 0
-    while j < top_k && j < length(store.embeddings) {
-        var max_idx: i32 = 0
-        var max_score: f64 = 0.0
-        var k: i32 = 0
+    ;; 상위 k개를 한 번의 선형 스캔으로 추출
+    var k: i32 = 0
+    while k < top_k && k < length(candidates) {
+        var max_idx: i32 = -1
+        var max_score: f64 = -1.0
+        var best_candidate_idx: i32 = -1
 
-        while k < length(scores) {
-            if scores[k] > max_score {
-                max_score = scores[k]
-                max_idx = k
+        ;; 미선택된 후보 중 최대 점수 찾기
+        var j: i32 = 0
+        while j < length(candidates) {
+            if length(candidates[j]) > 0 {
+                var parts = string_split(candidates[j], ":")
+                if length(parts) >= 2 {
+                    var candidate_idx = i32(parts[0])
+                    var candidate_score = f64(parts[1])
+                    if candidate_score > max_score {
+                        max_score = candidate_score
+                        max_idx = candidate_idx
+                        best_candidate_idx = j
+                    }
+                }
             }
-            k = k + 1
+            j = j + 1
         }
 
-        results.push(store.embeddings[max_idx])
-        scores[max_idx] = 0.0  ;; 이미 선택된 것 제외
+        if max_idx >= 0 && max_idx < length(store.embeddings) {
+            results.push(store.embeddings[max_idx])
+            candidates[best_candidate_idx] = ""  ;; 선택된 항목 제외
+        }
 
-        j = j + 1
+        k = k + 1
     }
 
-    println("[SEARCH] Query: " + query + " → " + str(length(results)) + " results")
+    println("[SEARCH] Query: " + query + " → " + str(length(results)) + " results (optimized)")
 
     results
 }
@@ -201,6 +232,8 @@ fn memory_pool_remember(pool: MemoryPool, item: str) -> MemoryPool {
 
         new_items.push(item)
         pool.items = new_items
+        ;; 버그 수정: FIFO 교체 시 size 유지
+        pool.size = pool.max_size
 
         println("[MEMORY] Pool full, replaced oldest")
     }

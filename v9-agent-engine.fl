@@ -1,0 +1,229 @@
+// FreeLang v9 에이전트 엔진
+// 동적 ToolRegistry 기반 도구 디스패치 및 ReAct 루프
+
+// ==================== 도구 레지스트리 ====================
+
+struct ToolRegistry {
+    tool_names: [str]
+    tool_descriptions: [str]
+    result_templates: [str]
+    size: i32
+}
+
+fn registry_new() -> ToolRegistry {
+    ToolRegistry {
+        tool_names: [],
+        tool_descriptions: [],
+        result_templates: [],
+        size: 0
+    }
+}
+
+fn registry_register(reg: ToolRegistry, name: str, desc: str, template: str) -> ToolRegistry {
+    reg.tool_names.push(name)
+    reg.tool_descriptions.push(desc)
+    reg.result_templates.push(template)
+    reg.size = reg.size + 1
+
+    println("[REGISTRY] Registered tool: " + name)
+    reg
+}
+
+fn registry_find_tool(reg: ToolRegistry, name: str) -> i32 {
+    var i: i32 = 0
+    while i < length(reg.tool_names) {
+        if reg.tool_names[i] == name {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+fn registry_execute(reg: ToolRegistry, tool_name: str, input: str) -> str {
+    var tool_idx = registry_find_tool(reg, tool_name)
+
+    if tool_idx == -1 {
+        return "error:agent:unknown_tool:" + tool_name
+    }
+
+    if length(tool_name) == 0 {
+        return "error:agent:empty_tool_name"
+    }
+
+    // 템플릿 기반 결과 생성
+    var result = "Tool: " + tool_name + " | Input: " + input + " | Result: "
+    result = result + reg.result_templates[tool_idx]
+
+    println("[EXEC] Tool executed: " + tool_name)
+    result
+}
+
+fn registry_list_tools(reg: ToolRegistry) -> str {
+    var list = "=== Available Tools ===\n"
+    var i: i32 = 0
+
+    while i < length(reg.tool_names) {
+        list = list + str(i + 1) + ". " + reg.tool_names[i] + "\n"
+        list = list + "   " + reg.tool_descriptions[i] + "\n"
+        i = i + 1
+    }
+
+    list
+}
+
+fn registry_build_default() -> ToolRegistry {
+    var reg = registry_new()
+
+    // 9개 기본 도구 등록
+    reg = registry_register(reg, "search", "웹 검색", "Found 5 relevant results")
+    reg = registry_register(reg, "calculate", "수학 계산", "Calculation result: 42")
+    reg = registry_register(reg, "analyze", "데이터 분석", "Analysis complete")
+    reg = registry_register(reg, "code_review", "코드 검토", "Code quality: Good")
+    reg = registry_register(reg, "summarize", "문서 요약", "Summary generated")
+    reg = registry_register(reg, "translate", "번역", "Translation complete")
+    reg = registry_register(reg, "image_analyze", "이미지 분석", "Image processed")
+    reg = registry_register(reg, "sql_query", "SQL 쿼리", "Query executed")
+    reg = registry_register(reg, "file_read", "파일 읽기", "File loaded")
+
+    reg
+}
+
+// ==================== AgentState ====================
+
+struct AgentTask {
+    id: str
+    description: str
+    tool_name: str
+    input: str
+    result: str
+    status: str  // "pending", "executing", "done", "failed"
+}
+
+struct AgentState {
+    agent_id: str
+    tasks: [AgentTask]
+    current_task_idx: i32
+    status: str  // "idle", "running", "failed", "completed"
+    reasoning: str
+}
+
+fn agent_state_new(agent_id: str) -> AgentState {
+    AgentState {
+        agent_id: agent_id,
+        tasks: [],
+        current_task_idx: 0,
+        status: "idle",
+        reasoning: ""
+    }
+}
+
+// ==================== ReAct 루프 ====================
+
+fn agent_react_step(state: AgentState, registry: ToolRegistry) -> str {
+    if state.current_task_idx >= length(state.tasks) {
+        return "All tasks completed"
+    }
+
+    var task = state.tasks[state.current_task_idx]
+    println("[REACT] Step " + str(state.current_task_idx + 1) + ": " + task.description)
+
+    // 도구 실행
+    var result = registry_execute(registry, task.tool_name, task.input)
+
+    // 에러 감지
+    if substring(result, 0, 6) == "error:" {
+        println("[ERROR] " + result)
+        return result
+    }
+
+    state.tasks[state.current_task_idx].result = result
+    state.tasks[state.current_task_idx].status = "done"
+
+    println("[RESULT] " + substring(result, 0, 50) + "...")
+
+    result
+}
+
+fn agent_react_loop(state: AgentState, registry: ToolRegistry) -> AgentState {
+    println("[AGENT] Starting ReAct loop...")
+    state.status = "running"
+
+    while state.current_task_idx < length(state.tasks) {
+        var result = agent_react_step(state, registry)
+
+        // 에러 처리: 에러 시 루프 종료
+        if substring(result, 0, 6) == "error:" {
+            state.status = "failed"
+            println("[AGENT] Failed at task " + str(state.current_task_idx))
+            return state
+        }
+
+        state.current_task_idx = state.current_task_idx + 1
+    }
+
+    state.status = "completed"
+    println("[AGENT] All tasks completed!")
+
+    state
+}
+
+fn agent_add_task(state: AgentState, desc: str, tool: str, input: str) -> AgentState {
+    var task = AgentTask {
+        id: "task_" + str(length(state.tasks) + 1),
+        description: desc,
+        tool_name: tool,
+        input: input,
+        result: "",
+        status: "pending"
+    }
+
+    state.tasks.push(task)
+    println("[TASK] Added: " + desc)
+
+    state
+}
+
+// ==================== 메인 테스트 ====================
+
+fn main() {
+    println("╔═════════════════════════════════════════╗")
+    println("║  v9 에이전트 엔진 (동적 ToolRegistry)   ║")
+    println("╚═════════════════════════════════════════╝")
+    println("")
+
+    // 테스트 1: ToolRegistry 생성 및 등록
+    println("1️⃣ ToolRegistry 초기화")
+    var registry = registry_build_default()
+    println(registry_list_tools(registry))
+    println("")
+
+    // 테스트 2: AgentState 생성
+    println("2️⃣ 에이전트 상태 초기화")
+    var state = agent_state_new("agent_001")
+    state = agent_add_task(state, "사용자 질문 분석", "analyze", "What is FreeLang?")
+    state = agent_add_task(state, "웹 검색 실행", "search", "FreeLang programming language")
+    state = agent_add_task(state, "결과 요약", "summarize", "Search results")
+    println("")
+
+    // 테스트 3: ReAct 루프 실행
+    println("3️⃣ ReAct 루프 실행")
+    state = agent_react_loop(state, registry)
+    println("")
+
+    // 테스트 4: 상태 확인
+    println("4️⃣ 최종 상태")
+    println("  Agent Status: " + state.status)
+    println("  Completed Tasks: " + str(state.current_task_idx) + "/" + str(length(state.tasks)))
+    println("")
+
+    // 테스트 5: 미등록 도구 테스트 (에러 처리)
+    println("5️⃣ 미등록 도구 테스트 (에러 감지)")
+    var error_state = agent_state_new("agent_002")
+    error_state = agent_add_task(error_state, "잘못된 도구 사용", "unknown_tool", "test")
+    error_state = agent_react_loop(error_state, registry)
+    println("  Final Status: " + error_state.status)
+    println("")
+
+    println("✅ 에이전트 엔진 완료!")
+}

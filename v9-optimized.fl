@@ -6,24 +6,33 @@
 struct CompileCache {
     source_hashes: [str]
     compiled_ast: [str]
+    max_size: i32
+    size: i32
 }
 
 fn compile_cache_new() -> CompileCache {
     CompileCache {
         source_hashes: [],
-        compiled_ast: []
+        compiled_ast: [],
+        max_size: 100,
+        size: 0
     }
 }
 
 fn hash_source(source: str) -> str {
-    // 간단한 해시 함수
-    var hash: i32 = 0
+    // djb2 해시 알고리즘 (충돌 최소화)
+    var hash: i32 = 5381
     var i: i32 = 0
 
     while i < length(source) {
         var code = char_code(substring(source, i, i + 1))
-        hash = hash + code
+        hash = hash * 33 + code  ;; djb2: hash * 33 + char
         i = i + 1
+    }
+
+    ;; 음수 처리
+    if hash < 0 {
+        hash = hash * -1
     }
 
     str(hash)
@@ -47,10 +56,31 @@ fn compile_cache_get(cache: CompileCache, source: str) -> str {
 
 fn compile_cache_set(cache: CompileCache, source: str, ast: str) -> CompileCache {
     var hash = hash_source(source)
+
+    ;; 캐시가 가득 찼으면 가장 오래된 것 제거 (FIFO)
+    if cache.size >= cache.max_size {
+        var new_hashes: [str] = []
+        var new_asts: [str] = []
+        var i: i32 = 1  ;; 0번째 항목 건너뛰기
+
+        while i < length(cache.source_hashes) {
+            new_hashes.push(cache.source_hashes[i])
+            new_asts.push(cache.compiled_ast[i])
+            i = i + 1
+        }
+
+        cache.source_hashes = new_hashes
+        cache.compiled_ast = new_asts
+        cache.size = cache.size - 1
+
+        println("[CACHE] Evicted oldest (size: " + str(cache.size) + "/" + str(cache.max_size) + ")")
+    }
+
     cache.source_hashes.push(hash)
     cache.compiled_ast.push(ast)
+    cache.size = cache.size + 1
 
-    println("[CACHE] Stored")
+    println("[CACHE] Stored (size: " + str(cache.size) + "/" + str(cache.max_size) + ")")
 
     cache
 }

@@ -1,0 +1,328 @@
+// FreeLang v9 가상 머신
+// Bytecode를 실행하는 스택 기반 VM
+
+// ==================== VM 스택 ====================
+
+struct VMStack {
+    values: [str]
+    top: i32
+}
+
+fn vm_stack_new() -> VMStack {
+    VMStack {
+        values: [],
+        top: 0
+    }
+}
+
+fn vm_push(stack: VMStack, value: str) -> VMStack {
+    stack.values.push(value)
+    stack.top = stack.top + 1
+    stack
+}
+
+fn vm_pop(stack: VMStack) -> [str] {
+    var result: [str] = []
+    if stack.top > 0 {
+        stack.top = stack.top - 1
+        var value = stack.values[stack.top]
+        result.push(value)
+        result.push("ok")
+    } else {
+        result.push("")
+        result.push("underflow")
+    }
+    result
+}
+
+fn vm_peek(stack: VMStack) -> str {
+    if stack.top > 0 {
+        return stack.values[stack.top - 1]
+    }
+    ""
+}
+
+fn vm_stack_size(stack: VMStack) -> i32 {
+    stack.top
+}
+
+// ==================== VM 프레임 ====================
+
+struct VMFrame {
+    instructions: [str]     // Bytecode 명령어 배열 (문자열)
+    pc: i32                 // 프로그램 카운터
+    stack: VMStack
+    locals: [str]           // 로컬 변수명
+    local_values: [str]     // 로컬 변수값
+}
+
+fn vm_frame_new(instructions: [str]) -> VMFrame {
+    VMFrame {
+        instructions: instructions,
+        pc: 0,
+        stack: vm_stack_new(),
+        locals: [],
+        locals_values: []
+    }
+}
+
+// ==================== VM 실행 ====================
+
+fn vm_execute(program_str: str) -> str {
+    // program_str 형식: "PUSH_NUM 1|PUSH_NUM 2|ADD|..."
+    println("╔════════════════════════════════════╗")
+    println("║  VM Executing Bytecode...          ║")
+    println("╚════════════════════════════════════╝")
+
+    var instructions: [str] = []
+    var current: str = ""
+    var i: i32 = 0
+
+    // 명령어 파싱
+    while i < length(program_str) {
+        var ch = substring(program_str, i, i + 1)
+        if ch == "|" {
+            if length(current) > 0 {
+                instructions.push(current)
+                current = ""
+            }
+        } else {
+            current = current + ch
+        }
+        i = i + 1
+    }
+
+    if length(current) > 0 {
+        instructions.push(current)
+    }
+
+    // VM 상태 초기화
+    var stack = vm_stack_new()
+    var pc: i32 = 0
+
+    // Fetch-Decode-Execute 루프
+    while pc < length(instructions) {
+        var instr_line = instructions[pc]
+
+        // 명령어와 피연산자 분해
+        var space_idx: i32 = 0
+        var found_space: bool = false
+        var j: i32 = 0
+
+        while j < length(instr_line) {
+            if substring(instr_line, j, j + 1) == " " {
+                space_idx = j
+                found_space = true
+                break
+            }
+            j = j + 1
+        }
+
+        var opcode: str = instr_line
+        var operand: str = ""
+
+        if found_space {
+            opcode = substring(instr_line, 0, space_idx)
+            operand = substring(instr_line, space_idx + 1, length(instr_line))
+        }
+
+        println("[VM] PC=" + str(pc) + ": " + opcode + (if length(operand) > 0 { " " + operand } else { "" }))
+
+        // 명령어 실행
+        if opcode == "PUSH_NUM" {
+            stack = vm_push(stack, operand)
+        } else {
+            if opcode == "PUSH_STR" {
+                stack = vm_push(stack, "\"" + operand + "\"")
+            } else {
+                if opcode == "PUSH_BOOL" {
+                    stack = vm_push(stack, operand)
+                } else {
+                    if opcode == "ADD" {
+                        var pop_result1 = vm_pop(stack)
+                        if pop_result1[1] != "ok" {
+                            return "error:vm:stack_underflow_ADD"
+                        }
+                        var b = pop_result1[0]
+                        stack.top = stack.top
+
+                        var pop_result2 = vm_pop(stack)
+                        if pop_result2[1] != "ok" {
+                            return "error:vm:stack_underflow_ADD"
+                        }
+                        var a = pop_result2[0]
+                        stack.top = stack.top
+
+                        var sum_result = i32(a) + i32(b)
+                        stack = vm_push(stack, str(sum_result))
+                    } else {
+                        if opcode == "SUB" {
+                            var pop_result1 = vm_pop(stack)
+                            var b = pop_result1[0]
+                            stack.top = stack.top
+
+                            var pop_result2 = vm_pop(stack)
+                            var a = pop_result2[0]
+                            stack.top = stack.top
+
+                            var diff = i32(a) - i32(b)
+                            stack = vm_push(stack, str(diff))
+                        } else {
+                            if opcode == "MUL" {
+                                var pop_result1 = vm_pop(stack)
+                                var b = pop_result1[0]
+                                stack.top = stack.top
+
+                                var pop_result2 = vm_pop(stack)
+                                var a = pop_result2[0]
+                                stack.top = stack.top
+
+                                var prod = i32(a) * i32(b)
+                                stack = vm_push(stack, str(prod))
+                            } else {
+                                if opcode == "DIV" {
+                                    var pop_result1 = vm_pop(stack)
+                                    var b = pop_result1[0]
+                                    stack.top = stack.top
+
+                                    var pop_result2 = vm_pop(stack)
+                                    var a = pop_result2[0]
+                                    stack.top = stack.top
+
+                                    if i32(b) == 0 {
+                                        return "error:vm:division_by_zero"
+                                    }
+
+                                    var div = i32(a) / i32(b)
+                                    stack = vm_push(stack, str(div))
+                                } else {
+                                    if opcode == "CMP_EQ" {
+                                        var pop_result1 = vm_pop(stack)
+                                        var b = pop_result1[0]
+                                        stack.top = stack.top
+
+                                        var pop_result2 = vm_pop(stack)
+                                        var a = pop_result2[0]
+                                        stack.top = stack.top
+
+                                        if a == b {
+                                            stack = vm_push(stack, "true")
+                                        } else {
+                                            stack = vm_push(stack, "false")
+                                        }
+                                    } else {
+                                        if opcode == "CMP_LT" {
+                                            var pop_result1 = vm_pop(stack)
+                                            var b = pop_result1[0]
+                                            stack.top = stack.top
+
+                                            var pop_result2 = vm_pop(stack)
+                                            var a = pop_result2[0]
+                                            stack.top = stack.top
+
+                                            if i32(a) < i32(b) {
+                                                stack = vm_push(stack, "true")
+                                            } else {
+                                                stack = vm_push(stack, "false")
+                                            }
+                                        } else {
+                                            if opcode == "CMP_GT" {
+                                                var pop_result1 = vm_pop(stack)
+                                                var b = pop_result1[0]
+                                                stack.top = stack.top
+
+                                                var pop_result2 = vm_pop(stack)
+                                                var a = pop_result2[0]
+                                                stack.top = stack.top
+
+                                                if i32(a) > i32(b) {
+                                                    stack = vm_push(stack, "true")
+                                                } else {
+                                                    stack = vm_push(stack, "false")
+                                                }
+                                            } else {
+                                                if opcode == "JMP_IF_FALSE" {
+                                                    var pop_result = vm_pop(stack)
+                                                    var cond = pop_result[0]
+                                                    stack.top = stack.top
+
+                                                    if cond == "false" {
+                                                        pc = i32(operand)
+                                                        continue
+                                                    }
+                                                } else {
+                                                    if opcode == "JMP" {
+                                                        pc = i32(operand)
+                                                        continue
+                                                    } else {
+                                                        if opcode == "PRINT" {
+                                                            var pop_result = vm_pop(stack)
+                                                            var value = pop_result[0]
+                                                            stack.top = stack.top
+                                                            println("[OUTPUT] " + value)
+                                                        } else {
+                                                            if opcode == "HALT" {
+                                                                break
+                                                            } else {
+                                                                println("[ERROR] Unknown opcode: " + opcode)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        pc = pc + 1
+    }
+
+    // 최종 스택 값 반환
+    var final_value = vm_peek(stack)
+
+    println("[VM] Stack top: " + final_value)
+    println("[VM] Execution complete!")
+
+    final_value
+}
+
+// ==================== 메인 테스트 ====================
+
+fn main() {
+    println("╔═════════════════════════════════════╗")
+    println("║  v9 VM (스택 기반 Bytecode 실행)    ║")
+    println("╚═════════════════════════════════════╝")
+    println("")
+
+    // 테스트 1: 간단한 산술 (1 + 2 = 3)
+    println("✅ 테스트 1: 1 + 2")
+    var result1 = vm_execute("PUSH_NUM 1|PUSH_NUM 2|ADD|HALT")
+    println("  Result: " + result1)
+    println("")
+
+    // 테스트 2: 복잡한 산술 ((2 + 3) * 4 = 20)
+    println("✅ 테스트 2: (2 + 3) * 4")
+    var result2 = vm_execute("PUSH_NUM 2|PUSH_NUM 3|ADD|PUSH_NUM 4|MUL|HALT")
+    println("  Result: " + result2)
+    println("")
+
+    // 테스트 3: 비교 (10 > 5 = true)
+    println("✅ 테스트 3: 10 > 5")
+    var result3 = vm_execute("PUSH_NUM 10|PUSH_NUM 5|CMP_GT|HALT")
+    println("  Result: " + result3)
+    println("")
+
+    // 테스트 4: 조건부 점프
+    println("✅ 테스트 4: 조건부 실행")
+    var result4 = vm_execute("PUSH_NUM 10|PUSH_NUM 5|CMP_GT|JMP_IF_FALSE 5|PUSH_NUM 100|JMP 6|PUSH_NUM 200|HALT")
+    println("  Result: " + result4)
+    println("")
+
+    println("✅ VM 테스트 완료!")
+}

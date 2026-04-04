@@ -1,0 +1,251 @@
+// FreeLang v9 에이전트 오케스트레이터
+// TaskGroup 기반 병렬/순차 워크플로우 실행
+
+// ==================== 작업 그룹 ====================
+
+struct Task {
+    id: str
+    name: str
+    agent_type: str
+    input: str
+    output: str
+    status: str  // "pending", "running", "done", "failed"
+}
+
+struct TaskGroup {
+    group_id: str
+    tasks: [Task]
+    mode: str   // "sequential" | "parallel"
+    status: str // "pending", "running", "done", "failed"
+}
+
+fn task_group_new(group_id: str, mode: str) -> TaskGroup {
+    TaskGroup {
+        group_id: group_id,
+        tasks: [],
+        mode: mode,
+        status: "pending"
+    }
+}
+
+fn task_group_add_task(group: TaskGroup, task_id: str, name: str, agent: str, input: str) -> TaskGroup {
+    var task = Task {
+        id: task_id,
+        name: name,
+        agent_type: agent,
+        input: input,
+        output: "",
+        status: "pending"
+    }
+
+    group.tasks.push(task)
+    println("[GROUP] Added task: " + name + " (" + agent + ")")
+
+    group
+}
+
+// ==================== 순차 실행 ====================
+
+fn execute_sequential(group: TaskGroup) -> TaskGroup {
+    println("[ORCHESTRATE] Sequential mode: " + group.group_id)
+    group.status = "running"
+
+    var i: i32 = 0
+    while i < length(group.tasks) {
+        var task = group.tasks[i]
+        println("  [" + str(i + 1) + "/" + str(length(group.tasks)) + "] Running: " + task.name)
+
+        // 태스크 실행 시뮬레이션
+        task.status = "running"
+        var output = task.agent_type + " processed: " + task.input
+        task.output = output
+        task.status = "done"
+
+        group.tasks[i] = task
+
+        println("    ✓ Completed: " + output)
+
+        i = i + 1
+    }
+
+    group.status = "done"
+    println("[ORCHESTRATE] Sequential complete")
+
+    group
+}
+
+// ==================== 병렬 실행 ====================
+
+fn execute_parallel(group: TaskGroup) -> TaskGroup {
+    println("[ORCHESTRATE] Parallel mode: " + group.group_id)
+    group.status = "running"
+
+    // 모든 태스크를 실행 중으로 표시
+    var i: i32 = 0
+    while i < length(group.tasks) {
+        group.tasks[i].status = "running"
+        i = i + 1
+    }
+
+    println("  Starting " + str(length(group.tasks)) + " tasks in parallel...")
+
+    // 병렬 실행 시뮬레이션 (실제로는 동시 실행)
+    i = 0
+    while i < length(group.tasks) {
+        var task = group.tasks[i]
+        var output = task.agent_type + " processed (parallel): " + task.input
+        task.output = output
+        task.status = "done"
+
+        group.tasks[i] = task
+
+        println("    ✓ Task " + str(i + 1) + ": " + task.name)
+
+        i = i + 1
+    }
+
+    group.status = "done"
+    println("[ORCHESTRATE] Parallel complete")
+
+    group
+}
+
+// ==================== 오케스트레이션 계획 ====================
+
+struct OrchestrationPlan {
+    groups: [TaskGroup]
+    order: [i32]  // 실행 순서
+}
+
+fn plan_new() -> OrchestrationPlan {
+    OrchestrationPlan {
+        groups: [],
+        order: []
+    }
+}
+
+fn plan_add_group(plan: OrchestrationPlan, group: TaskGroup, order: i32) -> OrchestrationPlan {
+    plan.groups.push(group)
+    plan.order.push(order)
+
+    println("[PLAN] Added group: " + group.group_id + " (order: " + str(order) + ")")
+
+    plan
+}
+
+fn orchestrate_groups(plan: OrchestrationPlan) -> str {
+    println("╔═══════════════════════════════════════╗")
+    println("║  Orchestrating task groups...         ║")
+    println("╚═══════════════════════════════════════╝")
+    println("")
+
+    // 각 그룹 실행
+    var i: i32 = 0
+    while i < length(plan.groups) {
+        var group = plan.groups[i]
+
+        if group.mode == "sequential" {
+            group = execute_sequential(group)
+        } else {
+            if group.mode == "parallel" {
+                group = execute_parallel(group)
+            }
+        }
+
+        plan.groups[i] = group
+        i = i + 1
+    }
+
+    println("")
+    println("✅ All groups completed")
+    "orchestration_complete"
+}
+
+// ==================== 병렬 워크플로우 예제 ====================
+
+fn run_parallel_workflow() -> str {
+    println("╔═════════════════════════════════════════╗")
+    println("║  Parallel Workflow Example              ║")
+    println("╚═════════════════════════════════════════╝")
+    println("")
+
+    var plan = plan_new()
+
+    // 그룹 1: 병렬 (data_analyst + rag_agent)
+    println("📋 Setting up Group 1 (Parallel: data_analyst, rag_agent)")
+    var g1 = task_group_new("group_1_parallel", "parallel")
+    g1 = task_group_add_task(g1, "t1", "Analyze user feedback", "data_analyst", "sentiment data")
+    g1 = task_group_add_task(g1, "t2", "Retrieve context", "rag_agent", "user query")
+    plan = plan_add_group(plan, g1, 1)
+    println("")
+
+    // 그룹 2: 순차 (code_reviewer - 그룹 1 결과에 의존)
+    println("📋 Setting up Group 2 (Sequential: code_reviewer)")
+    var g2 = task_group_new("group_2_sequential", "sequential")
+    g2 = task_group_add_task(g2, "t3", "Review generated code", "code_reviewer", "output from group 1")
+    plan = plan_add_group(plan, g2, 2)
+    println("")
+
+    // 오케스트레이션 실행
+    var result = orchestrate_groups(plan)
+
+    println("")
+    println("✅ Workflow complete: " + result)
+    result
+}
+
+// ==================== 복잡한 워크플로우 ====================
+
+fn run_complex_workflow() -> str {
+    println("╔═════════════════════════════════════════╗")
+    println("║  Complex Workflow (3 groups)            ║")
+    println("╚═════════════════════════════════════════╝")
+    println("")
+
+    var plan = plan_new()
+
+    // 그룹 1: 병렬 (데이터 수집)
+    var g1 = task_group_new("data_collection", "parallel")
+    g1 = task_group_add_task(g1, "t1", "Fetch from API", "api_agent", "user_id=123")
+    g1 = task_group_add_task(g1, "t2", "Query database", "db_agent", "SELECT * FROM users")
+    plan = plan_add_group(plan, g1, 1)
+
+    // 그룹 2: 순차 (데이터 처리)
+    var g2 = task_group_new("data_processing", "sequential")
+    g2 = task_group_add_task(g2, "t3", "Clean data", "data_cleaner", "raw data")
+    g2 = task_group_add_task(g2, "t4", "Normalize format", "normalizer", "cleaned data")
+    plan = plan_add_group(plan, g2, 2)
+
+    // 그룹 3: 병렬 (분석)
+    var g3 = task_group_new("analysis", "parallel")
+    g3 = task_group_add_task(g3, "t5", "Statistical analysis", "analyst", "processed data")
+    g3 = task_group_add_task(g3, "t6", "Generate report", "reporter", "processed data")
+    plan = plan_add_group(plan, g3, 3)
+
+    orchestrate_groups(plan)
+}
+
+// ==================== 메인 ====================
+
+fn main() {
+    println("╔═════════════════════════════════════════╗")
+    println("║  v9 에이전트 오케스트레이터              ║")
+    println("║  (병렬/순차 TaskGroup)                   ║")
+    println("╚═════════════════════════════════════════╝")
+    println("")
+
+    // 테스트 1: 병렬 워크플로우
+    println("✨ Test 1: Parallel Workflow")
+    println("")
+    var result1 = run_parallel_workflow()
+    println("")
+    println("")
+
+    // 테스트 2: 복잡한 워크플로우
+    println("✨ Test 2: Complex Workflow")
+    println("")
+    var result2 = run_complex_workflow()
+    println("")
+
+    println("✅ 오케스트레이터 완료!")
+}

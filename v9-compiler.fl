@@ -1,0 +1,306 @@
+// FreeLang v9 컴파일러
+// AST → Bytecode 변환 (완전 자가호스팅)
+
+// ==================== Instruction & Bytecode ====================
+
+struct Instruction {
+    opcode: str     // "PUSH_NUM", "ADD", "LOAD_VAR", ...
+    operand: str    // 피연산자
+    line: i32
+}
+
+struct BytecodeProgram {
+    instructions: [Instruction]
+    constants: [str]        // 상수 풀
+    labels: [str]           // 점프 레이블
+    label_positions: [i32]  // 레이블 → 주소
+}
+
+// ==================== Bytecode 초기화 ====================
+
+fn bytecode_program_new() -> BytecodeProgram {
+    BytecodeProgram {
+        instructions: [],
+        constants: [],
+        labels: [],
+        label_positions: []
+    }
+}
+
+fn emit(program: BytecodeProgram, opcode: str, operand: str) -> BytecodeProgram {
+    var instr = Instruction {
+        opcode: opcode,
+        operand: operand,
+        line: length(program.instructions)
+    }
+
+    program.instructions.push(instr)
+    program
+}
+
+fn emit_label(program: BytecodeProgram, label: str) -> BytecodeProgram {
+    program.labels.push(label)
+    program.label_positions.push(length(program.instructions))
+    program
+}
+
+fn add_constant(program: BytecodeProgram, constant: str) -> i32 {
+    program.constants.push(constant)
+    length(program.constants) - 1
+}
+
+// ==================== 컴파일 함수 ====================
+
+fn compile_node(node: str, program: BytecodeProgram) -> BytecodeProgram {
+    // 노드 형식:
+    // "num:42" → 숫자 상수
+    // "str:hello" → 문자열 상수
+    // "var:x" → 변수
+    // "sexpr:+|left|right" → 식
+
+    // 숫자 처리
+    if substring(node, 0, 4) == "num:" {
+        var num = substring(node, 4, length(node))
+        program = emit(program, "PUSH_NUM", num)
+        return program
+    }
+
+    // 문자열 처리
+    if substring(node, 0, 4) == "str:" {
+        var str_val = substring(node, 4, length(node))
+        var const_idx = add_constant(program, str_val)
+        program = emit(program, "PUSH_STR", str(const_idx))
+        return program
+    }
+
+    // 불린 처리
+    if substring(node, 0, 5) == "bool:" {
+        var bool_val = substring(node, 5, length(node))
+        program = emit(program, "PUSH_BOOL", bool_val)
+        return program
+    }
+
+    // 변수 처리
+    if substring(node, 0, 4) == "var:" {
+        var var_name = substring(node, 4, length(node))
+        program = emit(program, "LOAD_VAR", var_name)
+        return program
+    }
+
+    // 식 처리 (S-expression)
+    if substring(node, 0, 6) == "sexpr:" {
+        var expr_body = substring(node, 6, length(node))
+        program = compile_sexpr(expr_body, program)
+        return program
+    }
+
+    // 기본값
+    println("[COMPILE] Unknown node type: " + node)
+    program
+}
+
+fn compile_sexpr(expr: str, program: BytecodeProgram) -> BytecodeProgram {
+    // expr: "+|left|right" 형식
+    // left와 right는 재귀적으로 컴파일된 노드
+
+    // | 기준으로 분해 (간단한 파싱)
+    var parts: [str] = []
+    var current: str = ""
+    var i: i32 = 0
+
+    while i < length(expr) {
+        var ch = substring(expr, i, i + 1)
+        if ch == "|" {
+            if length(current) > 0 {
+                parts.push(current)
+                current = ""
+            }
+        } else {
+            current = current + ch
+        }
+        i = i + 1
+    }
+
+    if length(current) > 0 {
+        parts.push(current)
+    }
+
+    // 연산자 확인
+    if length(parts) == 0 {
+        return program
+    }
+
+    var op = parts[0]
+
+    // 산술 연산
+    if op == "+" || op == "-" || op == "*" || op == "/" {
+        if length(parts) >= 3 {
+            var left = parts[1]
+            var right = parts[2]
+
+            program = compile_node(left, program)
+            program = compile_node(right, program)
+
+            if op == "+" {
+                program = emit(program, "ADD", "")
+            }
+            if op == "-" {
+                program = emit(program, "SUB", "")
+            }
+            if op == "*" {
+                program = emit(program, "MUL", "")
+            }
+            if op == "/" {
+                program = emit(program, "DIV", "")
+            }
+        }
+        return program
+    }
+
+    // 비교 연산
+    if op == "=" || op == "==" {
+        if length(parts) >= 3 {
+            var left = parts[1]
+            var right = parts[2]
+
+            program = compile_node(left, program)
+            program = compile_node(right, program)
+            program = emit(program, "CMP_EQ", "")
+        }
+        return program
+    }
+
+    if op == "<" {
+        if length(parts) >= 3 {
+            var left = parts[1]
+            var right = parts[2]
+
+            program = compile_node(left, program)
+            program = compile_node(right, program)
+            program = emit(program, "CMP_LT", "")
+        }
+        return program
+    }
+
+    if op == ">" {
+        if length(parts) >= 3 {
+            var left = parts[1]
+            var right = parts[2]
+
+            program = compile_node(left, program)
+            program = compile_node(right, program)
+            program = emit(program, "CMP_GT", "")
+        }
+        return program
+    }
+
+    // if 조건문
+    if op == "if" {
+        if length(parts) >= 4 {
+            var condition = parts[1]
+            var then_branch = parts[2]
+            var else_branch = parts[3]
+
+            program = compile_node(condition, program)
+
+            var jmp_false_idx = length(program.instructions)
+            program = emit(program, "JMP_IF_FALSE", "")  // 나중에 수정
+
+            program = compile_node(then_branch, program)
+
+            var jmp_else_idx = length(program.instructions)
+            program = emit(program, "JMP", "")  // 나중에 수정
+
+            var else_addr = length(program.instructions)
+            program.instructions[jmp_false_idx].operand = str(else_addr)
+
+            program = compile_node(else_branch, program)
+
+            var end_addr = length(program.instructions)
+            program.instructions[jmp_else_idx].operand = str(end_addr)
+        }
+        return program
+    }
+
+    println("[COMPILE] Unknown operator: " + op)
+    program
+}
+
+fn compile(ast_nodes: [str]) -> BytecodeProgram {
+    println("╔════════════════════════════════════╗")
+    println("║  Compiling AST to Bytecode...      ║")
+    println("╚════════════════════════════════════╝")
+
+    var program = bytecode_program_new()
+
+    var i: i32 = 0
+    while i < length(ast_nodes) {
+        println("[COMPILE] Node " + str(i) + ": " + substring(ast_nodes[i], 0, 30))
+        program = compile_node(ast_nodes[i], program)
+        i = i + 1
+    }
+
+    program = emit(program, "HALT", "")
+
+    println("[COMPILE] Complete: " + str(length(program.instructions)) + " instructions")
+
+    program
+}
+
+// ==================== Bytecode 출력 ====================
+
+fn bytecode_to_string(program: BytecodeProgram) -> str {
+    var output = "=== BYTECODE ===\n"
+    var i: i32 = 0
+
+    while i < length(program.instructions) {
+        var instr = program.instructions[i]
+        output = output + str(i) + ": " + instr.opcode
+        if length(instr.operand) > 0 {
+            output = output + " " + instr.operand
+        }
+        output = output + "\n"
+        i = i + 1
+    }
+
+    output = output + "\n=== CONSTANTS ===\n"
+    i = 0
+    while i < length(program.constants) {
+        output = output + str(i) + ": " + program.constants[i] + "\n"
+        i = i + 1
+    }
+
+    output
+}
+
+// ==================== 메인 테스트 ====================
+
+fn main() {
+    println("╔═════════════════════════════════════╗")
+    println("║  v9 컴파일러 (AST → Bytecode)      ║")
+    println("╚═════════════════════════════════════╝")
+    println("")
+
+    // 테스트 1: 간단한 산술
+    println("✅ 테스트 1: 간단한 산술 (1 + 2)")
+    var ast1: [str] = ["sexpr:+|num:1|num:2"]
+    var prog1 = compile(ast1)
+    println(bytecode_to_string(prog1))
+    println("")
+
+    // 테스트 2: 중첩 산술
+    println("✅ 테스트 2: 중첩 산술 ((1 + 2) * 3)")
+    var ast2: [str] = ["sexpr:*|sexpr:+|num:1|num:2|num:3"]
+    var prog2 = compile(ast2)
+    println(bytecode_to_string(prog2))
+    println("")
+
+    // 테스트 3: 조건문
+    println("✅ 테스트 3: 조건문 (if > 10 5 then 100 else 200)")
+    var ast3: [str] = ["sexpr:if|sexpr:>|num:10|num:5|num:100|num:200"]
+    var prog3 = compile(ast3)
+    println(bytecode_to_string(prog3))
+    println("")
+
+    println("✅ 컴파일 완료!")
+}
