@@ -1,12 +1,12 @@
 # 📚 FreeLang v4 - API 레퍼런스
 
-**표준 라이브러리 42개 함수**
+**표준 라이브러리 48개 함수** (v4.4+: parse_int, first, last, append_file, exists)
 
 ---
 
 ## 📋 카테고리별 함수 목록
 
-### 1️⃣ 문자열 (String) - 8개 함수
+### 1️⃣ 문자열 (String) - 9개 함수
 
 #### length() -> i32
 문자열의 길이 반환
@@ -70,9 +70,18 @@ let text = "test"
 let padded = text.pad_right(8, "*")  // "test****"
 ```
 
+#### parse_int(str) -> Result(i32, str) [v4.4+]
+문자열을 정수로 변환
+```freelang
+match parse_int("42") {
+  case Ok(num) -> println(str(num)),  // 42
+  case Err(e) -> println("Parse error: " + e)
+}
+```
+
 ---
 
-### 2️⃣ 배열/컬렉션 (Array) - 7개 함수
+### 2️⃣ 배열/컬렉션 (Array) - 9개 함수 (first, last 추가됨 v4.4+)
 
 #### length() -> i32
 배열의 길이
@@ -200,8 +209,8 @@ match write_file("output.txt", "Hello") {
 }
 ```
 
-#### append_file(path: str, content: str) -> Result(void, str)
-파일에 추가
+#### append_file(path: str, content: str) -> Result(void, str) [v4.4+]
+파일에 추가 (v4.4+에서 새로 추가됨)
 ```freelang
 match append_file("log.txt", "New log\n") {
   case Ok(_) -> println("Appended"),
@@ -209,11 +218,11 @@ match append_file("log.txt", "New log\n") {
 }
 ```
 
-#### exists(path: str) -> bool
-파일 존재 확인
+#### exists(path: str) -> bool [v4.4+]
+파일 존재 확인 (v4.4+에서 새로 추가됨)
 ```freelang
-let exists = exists("data.txt")
-if exists {
+let file_exists = exists("data.txt")
+if file_exists {
   println("File exists")
 }
 ```
@@ -457,3 +466,4 @@ match db_open("app.db") {
 ---
 
 **Last Updated: 2026-04-05**
+**v4.4 Release**: New stdlib functions (parse_int, first, last, append_file, exists)

@@ -1,6 +1,6 @@
 {
   "name": "freelang-v4",
-  "version": "4.3.0",
+  "version": "4.4.0",
   "description": "FreeLang v4 - AI-First Programming Language with complete Lexer→Parser→Compiler→VM implementation. Parallel processing and distributed systems built-in.",
   "main": "dist/vm.js",
   "types": "dist/types.d.ts",
