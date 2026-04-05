@@ -143,6 +143,7 @@ fn cluster_dispatch(cluster: Cluster, task: Task) -> TaskResult {
 | [언어 완성도](language-completeness.md) | 82.6% 완성도 평가 |
 | [10단계 학습 가이드](learning-guide.md) | 초급→중급→고급 학습 경로 |
 | [API 레퍼런스](api-reference.md) | 표준 라이브러리 상세 문서 |
+| [다른 언어와의 비교](comparison.md) | Python, JavaScript, Go, Rust와 비교 |
 | [성능 벤치마크](benchmarks.md) | Phase 4 성능 측정 결과 |
 | [아키텍처](architecture.md) | 시스템 설계 문서 |
 
