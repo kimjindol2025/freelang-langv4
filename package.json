@@ -1,40 +1,43 @@
 {
-  "name": "gogs-cli-fl",
-  "version": "1.0.0",
-  "description": "gogs-cli-fl v1.0 - FreeLang v4 기반 Gogs CLI. 33개 명령어, 102개 API 메서드, 80% API 호출 감소",
-  "main": "src/commands/main.fl",
-  "bin": {
-    "gogs": "src/commands/main.fl"
-  },
+  "name": "freelang-v4",
+  "version": "4.3.0",
+  "description": "FreeLang v4 - AI-First Programming Language with complete Lexer→Parser→Compiler→VM implementation. Parallel processing and distributed systems built-in.",
+  "main": "dist/vm.js",
+  "types": "dist/types.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "jest",
-    "prepublish": "npm run build"
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
-    "url": "https://gogs.dclub.kr/kim/freelang-v4.git"
+    "url": "https://github.com/kimjindol2025/freelang-langv4.git"
+  },
+  "homepage": "https://github.com/kimjindol2025/freelang-langv4",
+  "bugs": {
+    "url": "https://github.com/kimjindol2025/freelang-langv4/issues"
   },
   "keywords": [
-    "gogs",
-    "git",
-    "cli",
     "freelang",
-    "api-client",
-    "batch-processing",
-    "caching"
+    "programming-language",
+    "compiler",
+    "vm",
+    "interpreter",
+    "ai-first",
+    "parallel-processing",
+    "distributed-systems",
+    "lexer",
+    "parser",
+    "static-typed"
   ],
-  "author": "KimNexus",
+  "author": "Kim Jin Dol <contact@freelang.dev>",
   "license": "MIT",
   "files": [
+    "dist/",
     "src/",
-    "stdlib/",
-    "GOGS_CLI_README.md",
-    "API.md",
-    "INSTALL.md",
-    "MIGRATION.md",
-    "CHANGELOG.md",
-    "PHASE6_COMPLETE.md",
+    "v9/",
+    "docs/",
+    "README.md",
     "LICENSE"
   ],
   "engines": {
