@@ -751,4 +751,93 @@ println(str(length(matrix2[0])))`
       expect(output).toEqual(["2", "2"]);
     });
   });
+
+  describe("표준 라이브러리 - parse_int (v4.4)", () => {
+    it("parse_int: 유효한 정수 문자열", async () => {
+      const { output } = await exec('println(parse_int("42"))');
+      expect(output.length).toBeGreaterThan(0);
+      expect(output[0]).toContain("Ok");
+    });
+
+    it("parse_int: 음수 정수 문자열", async () => {
+      const { output } = await exec('println(parse_int("-123"))');
+      expect(output.length).toBeGreaterThan(0);
+      expect(output[0]).toContain("Ok");
+    });
+
+    it("parse_int: 유효하지 않은 문자열 - 에러 반환", async () => {
+      const { output } = await exec('println(parse_int("abc"))');
+      expect(output.length).toBeGreaterThan(0);
+      expect(output[0]).toContain("Err");
+    });
+
+    it("parse_int: 빈 문자열 - 에러 반환", async () => {
+      const { output } = await exec('println(parse_int(""))');
+      expect(output.length).toBeGreaterThan(0);
+      expect(output[0]).toContain("Err");
+    });
+
+    it("parse_int: 공백이 포함된 문자열", async () => {
+      const { output } = await exec('println(parse_int("  42"))');
+      expect(output.length).toBeGreaterThan(0);
+      expect(output[0]).toContain("Ok");
+    });
+  });
+
+  describe("표준 라이브러리 - first/last (v4.4)", () => {
+    it("first: 배열의 첫 요소", async () => {
+      const { output } = await exec('println(first([1, 2, 3]))');
+      expect(output[0]).toContain("Some");
+      expect(output[0]).toContain("1");
+    });
+
+    it("first: 빈 배열 - None 반환", async () => {
+      const { output } = await exec('println(first([]))');
+      expect(output[0]).toContain("None");
+    });
+
+    it("last: 배열의 마지막 요소", async () => {
+      const { output } = await exec('println(last([1, 2, 3]))');
+      expect(output[0]).toContain("Some");
+      expect(output[0]).toContain("3");
+    });
+
+    it("last: 빈 배열 - None 반환", async () => {
+      const { output } = await exec('println(last([]))');
+      expect(output[0]).toContain("None");
+    });
+
+    it("first/last: 문자열 배열", async () => {
+      const { output } = await exec(
+        `println(first(["a", "b", "c"]))
+println(last(["a", "b", "c"]))`
+      );
+      expect(output[0]).toContain("Some");
+      expect(output[0]).toContain("a");
+      expect(output[1]).toContain("Some");
+      expect(output[1]).toContain("c");
+    });
+  });
+
+  describe("표준 라이브러리 - append_file/exists (v4.4)", () => {
+    it("exists: 기존 파일 확인 (package.json)", async () => {
+      const { output } = await exec('println(str(exists("package.json")))');
+      expect(output[0]).toEqual("true");
+    });
+
+    it("exists: 없는 파일 확인", async () => {
+      const { output } = await exec('println(str(exists("nonexistent_file_xyz_12345.txt")))');
+      expect(output[0]).toEqual("false");
+    });
+
+    it("append_file: 함수 호출 테스트", async () => {
+      const { output } = await exec('println(typeof(append_file))');
+      expect(output.length).toBeGreaterThan(0);
+    });
+
+    it("append_file: Ok 반환 확인", async () => {
+      const { output } = await exec('println(append_file("test_freelang.txt", "test"))');
+      expect(output[0]).toContain("Ok");
+    });
+  });
 });

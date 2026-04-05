@@ -1542,6 +1542,63 @@ export class VM {
         return { tag: "str", val: String.fromCharCode(n) };
       }
 
+      case "parse_int": {
+        // parse_int("42") → Ok(42), parse_int("abc") → Err("Invalid number")
+        const numStr = this.valueToString(args[0]);
+        const parsed = parseInt(numStr, 10);
+        if (isNaN(parsed)) {
+          return { tag: "err", val: { tag: "str", val: "Invalid number" } };
+        }
+        return { tag: "ok", val: { tag: "i32", val: parsed } };
+      }
+
+      case "first": {
+        // first([1,2,3]) → Some(1), first([]) → None
+        if (args[0].tag === "arr") {
+          const arr = args[0].val;
+          if (arr.length === 0) {
+            return { tag: "none" };
+          }
+          return { tag: "some", val: arr[0] };
+        }
+        return { tag: "none" };
+      }
+
+      case "last": {
+        // last([1,2,3]) → Some(3), last([]) → None
+        if (args[0].tag === "arr") {
+          const arr = args[0].val;
+          if (arr.length === 0) {
+            return { tag: "none" };
+          }
+          return { tag: "some", val: arr[arr.length - 1] };
+        }
+        return { tag: "none" };
+      }
+
+      case "append_file": {
+        // append_file(filepath, content) → Ok() or Err(msg)
+        const filepath = this.valueToString(args[0]);
+        const content = this.valueToString(args[1]);
+        try {
+          fs.appendFileSync(filepath, content);
+          return { tag: "ok", val: { tag: "void" } };
+        } catch (e) {
+          return { tag: "err", val: { tag: "str", val: `File append error: ${String(e)}` } };
+        }
+      }
+
+      case "exists": {
+        // exists(filepath) → bool
+        const filepath = this.valueToString(args[0]);
+        try {
+          const result = fs.existsSync(filepath);
+          return { tag: "bool", val: result };
+        } catch (e) {
+          return { tag: "bool", val: false };
+        }
+      }
+
       default:
         throw new Error(`panic: unknown builtin '${name}'`);
     }

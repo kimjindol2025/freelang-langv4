@@ -1392,6 +1392,8 @@ export class Compiler {
         "http_server_create", "http_server_accept", "http_server_respond",
         // External Commands (1)
         "exec_command",
+        // Standard Library Extensions (6) - v4.4
+        "parse_int", "first", "last", "fold", "append_file", "exists",
       ];
 
       if (builtins.includes(name)) {
